@@ -250,7 +250,8 @@ CREATE TABLE public."S04DISBURSEMENT_LOG" (
 	niddisbursementlog	UUID		PRIMARY KEY DEFAULT gen_random_uuid(),
 	tdate				DATE		NOT NULL	DEFAULT CURRENT_DATE,
 	ntotalamount		NUMERIC(12,2)	NOT NULL,
-	aprocedure			INT[]
+	aprocedure			INT[],
+	CONSTRAINT uq_disbursement_log_date UNIQUE (tdate)
 );
 
 -- =============================================================================
@@ -258,6 +259,7 @@ CREATE TABLE public."S04DISBURSEMENT_LOG" (
 -- =============================================================================
 CREATE TABLE public."S04DISBURSEMENT_LOG_DETAIL" (
 	niddisbursementlogdetail	UUID			PRIMARY KEY DEFAULT gen_random_uuid(),
+	niddisbursementlog			UUID			REFERENCES "S04DISBURSEMENT_LOG"(niddisbursementlog),
 	namount						NUMERIC(12,2)	NOT NULL,
 	nidperson					UUID			REFERENCES "S02PERSON"(nidperson),
 	nmora						NUMERIC(12,2),
@@ -481,6 +483,85 @@ FROM "S04DISBURSEMENT_LOG" l
 LEFT JOIN LATERAL unnest(l.aprocedure) WITH ORDINALITY AS e(id, ord) ON TRUE
 LEFT JOIN "S01PROCEDURE" p ON p.nidprocedure = e.id
 ORDER BY l.niddisbursementlog, e.ord;
+
+-- =============================================================================
+--  TRIGGER: validar que S04DISBURSEMENT_LOG_DETAIL pertenezca al mismo dia
+--  que su S04DISBURSEMENT_LOG padre
+-- =============================================================================
+--  FUNCION: fn_validate_detail_same_day
+--  TRIGGER: tr_validate_detail_same_day
+--  TABLA  : S04DISBURSEMENT_LOG_DETAIL
+--  MOMENTO: BEFORE INSERT OR UPDATE
+-- -----------------------------------------------------------------------------
+--  DESCRIPCION: Valida que el campo tdate (TIMESTAMPTZ) del detail,
+--  convertido a DATE en zona horaria America/Lima, coincida con el campo
+--  tdate (DATE) del S04DISBURSEMENT_LOG padre referenciado por
+--  niddisbursementlog. Si no coinciden, lanza excepcion y cancela la operacion.
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.fn_validate_detail_same_day()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ AS $function$
+ DECLARE
+     v_log_date DATE;
+ BEGIN
+     SELECT tdate INTO v_log_date
+     FROM "S04DISBURSEMENT_LOG"
+     WHERE niddisbursementlog = NEW.niddisbursementlog;
+
+     IF v_log_date IS NULL THEN
+         RAISE EXCEPTION 'S04DISBURSEMENT_LOG no encontrado para niddisbursementlog=%', NEW.niddisbursementlog;
+     END IF;
+
+     -- Convertir tdate del detail (TIMESTAMPTZ) a DATE en zona horaria America/Lima
+     IF (NEW.tdate AT TIME ZONE 'America/Lima')::DATE <> v_log_date THEN
+         RAISE EXCEPTION 'El detail tdate (%) no pertenece al mismo dia del log (%). Ambos deben ser el mismo dia en zona horaria America/Lima.',
+             (NEW.tdate AT TIME ZONE 'America/Lima')::DATE, v_log_date;
+     END IF;
+
+     RETURN NEW;
+ END;
+ $function$;
+
+ -- Trigger: valida que el detail pertenezca al mismo dia del log padre
+ CREATE TRIGGER tr_validate_detail_same_day
+ BEFORE INSERT OR UPDATE ON public."S04DISBURSEMENT_LOG_DETAIL"
+ FOR EACH ROW EXECUTE FUNCTION fn_validate_detail_same_day();
+
+-- =============================================================================
+--  PG_CRON JOB: crear S04DISBURSEMENT_LOG diario a las 00:00 hora Lima
+-- =============================================================================
+--  FUNCION: fn_create_daily_disbursement_log
+--  PROGRAMA: pg_cron job a las 00:00 America/Lima
+-- -----------------------------------------------------------------------------
+--  DESCRIPCION: Crea un registro en S04DISBURSEMENT_LOG para el dia actual
+--  (en zona horaria America/Lima) con ntotalamount = 0 y aprocedure = NULL.
+--  Se ejecuta automaticamente cada dia a las 00:00 hora Lima.
+--  Requiere extension pg_cron instalada: CREATE EXTENSION IF NOT EXISTS pg_cron;
+-- =============================================================================
+CREATE OR REPLACE FUNCTION public.fn_create_daily_disbursement_log()
+ RETURNS void
+ LANGUAGE plpgsql
+ AS $function$
+ DECLARE
+     v_today DATE;
+ BEGIN
+     v_today := (now() AT TIME ZONE 'America/Lima')::DATE;
+
+     -- Insertar log diario si no existe (upsert por fecha unica)
+     INSERT INTO "S04DISBURSEMENT_LOG" (tdate, ntotalamount, aprocedure)
+     VALUES (v_today, 0, NULL)
+     ON CONFLICT DO NOTHING;
+ END;
+ $function$;
+
+ -- Programar job pg_cron (requiere extension pg_cron)
+ -- SELECT cron.schedule('create-daily-disbursement-log', '0 0 * * *', 'SELECT fn_create_daily_disbursement_log();');
+ -- Nota: el cron usa la zona horaria del servidor. Para forzar America/Lima, configurar:
+ -- ALTER DATABASE lidercom SET timezone = 'America/Lima';
+
+-- =============================================================================
+--  VISUALIZADOR (VIEW): vw_disbursement_log_procedures
 
 -- =============================================================================
 --  SEED BASICO (opcional): tipos de identificacion y roles minimos
