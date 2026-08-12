@@ -1,0 +1,9 @@
+# Binarios compilados y artefactos de construcción
+/target/
+
+# Archivos de respaldo generados por Cargo
+**/*.rs.bk
+
+# (Opcional) Si usas herramientas de profiling o cobertura de código
+*.gcno
+*.gcda

@@ -1,0 +1,1369 @@
+================================================================================
+                         README.encrypt
+            SISTEMA DE CIFRADO — RUST_SERVICES (LIDERCOM)
+================================================================================
+
+Este documento describe cadains  instrucción de CPU, cada byte en memoria, cada
+llamada al sistema, cada transformación algebraica, cada layout de datos, cada
+path de error, y cada implicación de seguridad del pipeline criptográfico
+completo de rust_services. Cada sección incluye el código fuente REAL del
+proyecto, referenciado directamente de los archivos.
+
+NDICE
+═══════════════════════════════════════════════════════════════════════════════
+  PARTE I:   FUNDAMENTOS
+    § 1.   ARQUITECTURA GENERAL DEL SISTEMA
+    § 2.   Código: Cargo.toml
+    § 3.   MAPA DE MÓDULOS Y DEPENDENCIAS
+    § 4.   Código: src/lib.rs — Entrypoint PyO3
+    § 5.   EL PUENTE PYTHON-RUST (PyO3)
+    § 6.   CICLO DE VIDA DE LA CLAVE MAESTRA
+
+  PARTE II: CAPA 1 — DERIVACIÓN DE CLAVES (Argon2id)
+    § 7.   POR QUÉ UN KDF Y NO UN HASH DIRECTO
+    § 8.   ARGON2id: ALGORITMO EN DETALLE
+    § 9.   Código: src/mcrypto/mod.rs (derive_key + generate_random_salt)
+    § 10.  EJECUCIÓN PASO A PASO (con direcciones de memoria)
+
+  PARTE III: CAPA 2 — CIFRADO SIMÉTRICO (AES-256-GCM)
+    § 11.  AES-256: SUSTITUCIÓN-PERMUTACIÓN RED POR RED
+    § 12.  GCM: MODO COUNTER CON AUTENTICACIÓN GHASH
+    § 13.  Código: src/mcrypto/mod.rs (encrypt_data + decrypt_data)
+    § 14.  FORMATO EXACTO DEL CIPHERTEXT EN MEMORIA (hex dump)
+    § 15.  NONCE GENERATION (getrandom deep dive)
+    § 16.  ¿QUÉ PASA CUANDO EL TAG NO COINCIDE? (caída del oráculo)
+
+  PARTE IV: ORQUESTACIÓN — REGISTRO Y VERIFICACIÓN
+    § 17.  Código: src/mtopy/mod.rs  (register + ok_password + assign_role)
+    § 18.  Código: src/mtopy/validate_identity.rs  (crypto_conformance)
+    § 19.  FLUJO DE REGISTRO: DIAGRAMA DE SECUENCIA
+    § 20.  FLUJO DE VERIFICACIÓN: DIAGRAMA DE SECUENCIA
+
+  PARTE V: WALLETS SUBSTRATE (SR25519 / SCHNORRKEL / RISTRETTO)
+    § 21.  CURVA25519, RISTRETTO Y SCHNORRKEL
+    § 22.  Código: src/mblockchain/wallet_gen.rs
+    § 23.  FRASE MNEMOTÉCNICA BIP-39
+    § 24.  DIRECCIÓN SS58
+    § 25.  Código: src/mblockchain/entity/user.rs  (assign_role_in_jam)
+
+  PARTE VI: FIRMAS DIGITALES E INTEGRACIÓN JAM
+    § 26.  ESQUEMA DE FIRMA SR25519
+    § 27.  Código: src/mblockchain/conformance.rs
+    § 28.  Código: src/mblockchain/entity/test.rs (test unitario)
+    § 29.  ROLES Y CONTROL DE ACCESO (roles.json)
+
+  PARTE VII: ALMACENAMIENTO Y PERSISTENCIA
+    § 30.  ESQUEMA DE DATOS PERSISTIDOS
+    § 31.  REPRESENTACIÓN EN PYTHON
+    § 32.  MIGRACIONES A POSTGRESQL
+
+  PARTE VIII: SEGURIDAD
+    § 33.  MATRIZ DE AMENAZAS Y MITIGACIONES
+    § 34.  LIMITACIONES CONOCIDAS
+    § 35.  RECOMENDACIONES DE PRODUCCIÓN
+
+  PARTE IX: REFERENCIAS
+    § 36.  DEPENDENCIAS DIRECTAS E INDIRECTAS
+    § 37.  DOCUMENTACIÓN RELACIONADA
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE I: FUNDAMENTOS
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 1. ARQUITECTURA GENERAL DEL SISTEMA
+═══════════════════════════════════════════════════════════════════════════════
+
+El sistema se compone de tres capas criptográficas independientes:
+
+  1. Argon2id (KDF):  password + salt → 32 bytes de clave maestra
+  2. AES-256-GCM:      clave maestra + plaintext → ciphertext autenticado
+  3. sr25519:          seed BIP-39 → par de claves → firma Schnorrkel
+
+Relación de dependencia:
+
+  password (baja entropía)
+       │
+       ▼
+  [Argon2id + salt] ───────────────► master_key [u8; 32] (alta entropía)
+       │
+       ├── AES-256-GCM(password)     ──► psswrd_hash
+       ├── AES-256-GCM(seed BIP-39)  ──► encrypted_seed
+       ├── AES-256-GCM(pair sr25519) ──► encrypted_pair
+       └── AES-256-GCM(mnemonic)     ──► encrypted_phrase
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 2. Código: Cargo.toml
+═══════════════════════════════════════════════════════════════════════════════
+
+El archivo de manifiesto define el proyecto como cdylib (biblioteca dinámica
+cargable por Python vía PyO3) y declara todas las dependencias criptográficas.
+
+```toml
+[package]
+name = "rust_services"
+version = "0.1.0"
+edition = "2024"
+build = "build.rs"
+
+[lib]
+name = "rust_services"
+crate-type = ["cdylib"]
+
+[dependencies]
+aes-gcm = "0.10.3"
+argon2 = "0.5.3"
+chrono = { version = "0.4.44", features = ["serde"] }
+rand = "0.10.1"
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+sp-core = "40.0.0"
+tokio = { version = "1.52.1", features = ["full"] }
+hex = "0.4.3"
+parity-scale-codec = "3.7.5"
+pyo3 = "0.28.3"
+```
+
+crate-type = ["cdylib"]  -->  Produce librust_services.so, cargable por Python.
+cada crate y su función criptográfica:
+  - argon2 0.5.3:      KDF Argon2id (password → key)
+  - aes-gcm 0.10.3:    Cifrado simétrico autenticado AES-256-GCM
+  - rand 0.10.1:       CSPRNG (ChaCha12 + getrandom syscall)
+  - sp-core 40.0.0:    sr25519 (sign/verify), SS58, BIP-39, SCALE
+  - hex 0.4.3:         codificación hex para salt
+  - parity-scale-codec: serialización SCALE para payloads JAM
+  - pyo3 0.28.3:       puente Python-Rust
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 3. MAPA DE MÓDULOS Y DEPENDENCIAS
+═══════════════════════════════════════════════════════════════════════════════
+
+  rust_services/
+  ├── Cargo.toml
+  ├── build.rs
+  ├── src/
+  │   ├── main.rs
+  │   ├── lib.rs                     # PyO3: register(), ok_password()
+  │   ├── mcrypto/mod.rs             # derive_key, encrypt/decrypt, salt
+  │   ├── mtopy/mod.rs               # register, ok_password, assign_role
+  │   ├── mtopy/validate_identity.rs # crypto_conformance
+  │   └── mblockchain/
+  │       ├── mod.rs
+  │       ├── wallet_gen.rs          # gen_wallet, recover_wallet_from_phrase
+  │       ├── conformance.rs         # sign_ok, can_perform_action
+  │       └── entity/
+  │           ├── mod.rs
+  │           ├── user.rs            # UserAccount, RoleConfig, assign_role_in_jam
+  │           └── test.rs            # test_assign_role_signature_is_valid
+
+  Mapa de llamadas:
+
+  lib.rs
+    ├── mtopy::register(password)
+    │     ├── mcrypto::generate_random_salt()
+    │     ├── mcrypto::derive_key(password, salt)
+    │     ├── mcrypto::encrypt_data(password, master_key)
+    │     ├── mcrypto::decrypt_data(psswrd_hash, master_key)
+    │     ├── validate_identity::crypto_conformance(...)
+    │     ├── mblockchain::wallet_gen::gen_wallet()
+    │     ├── mcrypto::encrypt_data(seed, master_key)
+    │     ├── mcrypto::encrypt_data(pair_bytes, master_key)
+    │     ├── mcrypto::encrypt_data(mnemonic, master_key)
+    │     └── SS58 encode via sp_core
+    └── mtopy::ok_password(enc, salt, plain)
+          ├── mcrypto::derive_key(plain, salt)
+          └── mcrypto::decrypt_data(enc, key)
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 4. Código: src/lib.rs — Entrypoint PyO3
+═══════════════════════════════════════════════════════════════════════════════
+
+Este es el punto de entrada que Python ve. Expone exactamente dos funciones:
+register() para crear un usuario y ok_password() para verificar su contraseña.
+
+```rust
+use pyo3::prelude::*;
+
+pub mod mcrypto;
+pub mod mtopy;
+pub mod mblockchain;
+
+#[pyfunction]
+fn register(password: String) -> PyResult<(Vec<u8>, Vec<u8>, String, String)> {
+    Ok(mtopy::register(&password))
+}
+
+#[pyfunction]
+fn ok_password(encrypted_password: Vec<u8>, salt: String, plain_password: String) -> PyResult<bool> {
+    Ok(mtopy::ok_password(&encrypted_password, &salt, &plain_password))
+}
+
+#[pymodule]
+fn rust_services(_py: Python, m: &Bound<PyModule>) -> PyResult<()> {
+    m.add_function(wrap_pyfunction!(register, m)?)?;
+    m.add_function(wrap_pyfunction!(ok_password, m)?)?;
+    Ok(())
+}
+```
+
+register:
+  entrada:  password (String de Python)
+  salida:   (encrypted_password, encrypted_mnemonic, salt, public_key)
+            → (bytes, bytes, str, str) en Python
+
+ok_password:
+  entrada:  encrypted_password (bytes), salt (str), plain_password (str)
+  salida:   bool
+
+Ambas devuelven PyResult<T>: si Rust panic, Python ve una excepción.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 5. EL PUENTE PYTHON-RUST (PyO3)
+═══════════════════════════════════════════════════════════════════════════════
+
+5.1 Compilación
+
+  cargo build --release
+  # Produce: target/release/librust_services.so
+
+Este .so se copia al directorio del backend Python y se importa así:
+
+```python
+import rust_services
+result = rust_services.register("mi_password")
+```
+
+5.2 Conversión de tipos en la frontera
+
+  ┌─────────────┬───────────────┬────────────────────┐
+  │ Rust        │ PyO3          │ Python             │
+  ├─────────────┼───────────────┼────────────────────┤
+  │ String      │ PyString      │ str                │
+  │ Vec<u8>     │ PyBytes       │ bytes              │
+  │ bool        │ PyBool        │ bool               │
+  │ PyResult<T> │ Ok/Err        │ valor / exception  │
+  └─────────────┴───────────────┴────────────────────┘
+
+5.3 Uso típico desde Python
+
+```python
+from dataclasses import dataclass
+import rust_services
+
+@dataclass
+class RegistrationResult:
+    encrypted_password: bytes
+    encrypted_mnemonic: bytes
+    salt: str
+    public_key: str
+
+def register_user(password: str) -> RegistrationResult:
+    result = rust_services.register(password)
+    return RegistrationResult(
+        encrypted_password=result[0],
+        encrypted_mnemonic=result[1],
+        salt=result[2],
+        public_key=result[3],
+    )
+
+def verify_password(stored_enc: bytes, stored_salt: str, attempt: str) -> bool:
+    return rust_services.ok_password(stored_enc, stored_salt, attempt)
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 6. CICLO DE VIDA DE LA CLAVE MAESTRA
+═══════════════════════════════════════════════════════════════════════════════
+
+ETAPA 1: ALLOCACIÓN EN STACK
+
+  derive_key() declara:
+    let mut key = [0u8; 32];
+  Esto escribe 32 bytes en el stack frame. En x86_64:
+    sub rsp, 32        ; reserva 32 bytes
+    mov rdi, rsp       ; rdi = puntero
+    xor rax, rax       ; rax = 0
+    mov rcx, 32        ; count = 32
+    rep stosb          ; memset(key, 0, 32)
+  key es un array fijo, NO Vec. Nunca va al heap.
+
+ETAPA 2: ESCRITURA DEL VALOR DERIVADO
+
+  Argon2 escribe los 32 bytes directamente en key mediante
+  hash_password_into(). Internamente aloca ~19 MiB en heap para la matriz de
+  bloques, itera 3 pases, y al final escribe el resultado en &mut key.
+
+ETAPA 3: USO
+
+  key se pasa a encrypt_data() y crypto_conformance(). Aes256Gcm::new()
+  COPIA los 32 bytes a la estructura interna y expande las round keys
+  de AES-256 (240 bytes).
+
+ETAPA 4: DESTRUCCIÓN (sin zeroize)
+
+  Al salir de register():
+    - key sale de scope (es local de derive_key)
+    - [u8; 32] implementa Copy, NO tiene Drop
+    - Los 32 bytes quedan en el stack hasta que otra función los sobrescriba
+    - NO hay zeroización explícita (falta de crate zeroize)
+
+  Si un atacante tiene acceso a un core dump, podría encontrar la clave.
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE II: CAPA 1 — DERIVACIÓN DE CLAVES
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 7. POR QUÉ UN KDF Y NO UN HASH DIRECTO
+═══════════════════════════════════════════════════════════════════════════════
+
+  SHA-256:     ~100 ns en CPU  → 10M intentos/s
+  SHA-256 en ASIC: ~0.1 ns   → 10B intentos/s
+  RTX 4090:   ~15B SHA-256/s → contraseña de 8 chars alfanumérica en segundos
+
+  Argon2id (default):
+    - 19 MiB de memoria por intento
+    - 3 pases
+    - ~8 intentos/segundo por núcleo
+    - GPU no puede paralelizar (cada instancia necesita 19 MiB)
+    - ASIC prohibitivo (necesita 19 MiB de SRAM)
+
+  Argon2id no es más seguro matemáticamente, es más CARO computacionalmente.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 8. ARGON2id: ALGORITMO EN DETALLE
+═══════════════════════════════════════════════════════════════════════════════
+
+Argon2id usa:
+
+  Algoritmo: Argon2id  (Argon2i en 1er pase, Argon2d después)
+  Versión:   0x13
+  t_cost:    3
+  m_cost:    19456 KiB ≈ 19 MiB
+  lanes:     4
+  out_len:   32 bytes
+
+  hash_password_into() internamente:
+    1. Aloca matriz de bloques de 1024 bytes cada uno
+    2. Computa H0 = Blake2b(password_len || password || salt_len || salt || ...)
+    3. Para cada pase (0..t_cost):
+         Para cada lane (0..p_cost):
+           Para cada bloque:
+             ref = compute_reference(bloque_anterior, pase, lane)
+             nuevo = G(bloque_anterior, memory[ref])
+             actual = XOR(actual, nuevo)
+    4. Últimos bloques de cada lane se combinan con XOR
+    5. Blake2b comprime → 32 bytes de salida
+
+  La función G es un PRF basado en Blake2b con 8 rondas de mezcla.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 9. Código: src/mcrypto/mod.rs (derive_key + generate_random_salt)
+═══════════════════════════════════════════════════════════════════════════════
+
+Este es el módulo criptográfico central. Contiene las funciones de derivación
+de clave, cifrado/descifrado, y generación de salt.
+
+```rust
+use argon2::{
+    password_hash::{SaltString},
+    Argon2, PasswordHasher
+};
+use aes_gcm::{Aes256Gcm, aead::{KeyInit, Aead}, Nonce};
+use rand::{RngExt, rng};
+
+
+pub fn derive_key(master_password: &str, salt: &str) -> [u8; 32] {
+    let config = Argon2::default();
+    let mut key = [0u8; 32];
+    
+    let salt_bytes = salt.as_bytes();
+
+    config.hash_password_into(master_password.as_bytes(), salt_bytes, &mut key)
+        .expect("Error derivando clave");
+    
+    key
+}
+
+pub fn encrypt_data(content: &[u8], master_pass: &[u8; 32]) -> Vec<u8> {
+    let cipher = Aes256Gcm::new(master_pass.into());
+
+    let mut nonce_bytes = [0u8; 12];
+    rng().fill(&mut nonce_bytes);
+    let nonce = Nonce::from_slice(&nonce_bytes);
+    
+    let ciphertext = cipher.encrypt(nonce, content).expect("Cifrado fallido");
+
+    [nonce_bytes.as_slice(), &ciphertext].concat()
+}
+
+pub fn decrypt_data(ciphertext: &[u8], key: &[u8; 32]) -> Result<Vec<u8>, aes_gcm::Error> {
+    let cipher = Aes256Gcm::new(key.into());
+
+    if ciphertext.len() < 12 {
+        return Err(aes_gcm::Error);
+    }
+
+    let (nonce_bytes, actual_ciphertext) = ciphertext.split_at(12);
+    let nonce = Nonce::from_slice(nonce_bytes);
+
+    cipher.decrypt(nonce, actual_ciphertext)
+}
+
+pub fn generate_random_salt() -> String {
+    let mut salt_bytes = [0u8; 16];
+    // Usamos rng() aquí también para consistencia
+    rng().fill(&mut salt_bytes);
+    hex::encode(salt_bytes)
+}
+
+pub fn decrypt_to_string(vec_data: Vec<u8>) -> String {
+    String::from_utf8(vec_data).unwrap_or_else(|_| "Error converting to string".into())
+}
+```
+
+Análisis línea por línea:
+
+derive_key:
+  - Argon2::default() → configuración por defecto (Argon2id, 3 pases)
+  - salt.as_bytes() → convierte el &str hex a &[u8] (32 bytes ASCII)
+  - hash_password_into() → ejecuta Argon2, escribe 32 bytes en key
+  - Retorna [u8; 32] → se copia al caller (posible NRVO)
+
+encrypt_data:
+  - Aes256Gcm::new() → inicializa el cifrador con la clave
+  - rng().fill() → 12 bytes aleatorios para el nonce
+  - cipher.encrypt() → AES-256-GCM: produce ciphertext + tag (16B)
+  - Concatena nonce(12B) + ciphertext(NB) + tag(16B) en un solo Vec<u8>
+
+decrypt_data:
+  - split_at(12) → separa nonce del ciphertext+tag
+  - cipher.decrypt() → verifica tag GHASH, si OK descifra AES-CTR
+  - Si tag inválido → Err(aes_gcm::Error). Error opaco (ZST), no revela causa.
+
+generate_random_salt:
+  - 16 bytes de rand::rng() → getrandom syscall en Linux
+  - hex::encode() → 32 caracteres hex
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 10. EJECUCIÓN PASO A PASO (con direcciones de memoria)
+═══════════════════════════════════════════════════════════════════════════════
+
+Supongamos derive_key("MiClave123!", "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"):
+
+  1. Stack de register():
+       [rbp - 0x80]: ptr a usr_salt_obj (String en heap)
+       [rbp - 0x70]: master_key [u8; 32]
+
+     Salta a derive_key():
+       [rbp - 0x10]: ptr a master_password
+       [rbp - 0x08]: ptr a salt
+       [rbp + 0x00]: config (Argon2)
+       [rbp + 0x08]: key [u8; 32] ← 32 BYTES CRÍTICOS
+
+  2. hash_password_into():
+     a. Aloca 19 MiB en heap (vec![Block::zeroed(); 19456])
+     b. H0 = Blake2b(parámetros || password || salt)
+     c. 3 pases × 4 lanes × 19456 bloques de G()
+     d. Combina últimos bloques con XOR
+     e. Blake2b → 32 bytes → copia a &mut key
+
+  3. memory se dropea (free de 19 MiB), key se retorna.
+
+  4. En register(), master_key recibe la copia de 32 bytes.
+
+  5. Al salir de register(), master_key queda en el stack sin zeroizar.
+
+  TIEMPO: ~80-150 ms por derive_key en CPU moderna.
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE III: CAPA 2 — CIFRADO SIMÉTRICO
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 11. AES-256: SUSTITUCIÓN-PERMUTACIÓN RED POR RED
+═══════════════════════════════════════════════════════════════════════════════
+
+AES-256 opera sobre bloques de 128 bits (matriz 4×4). 14 rondas.
+
+  Cada ronda:
+    1. SubBytes (SB): cada byte se sustituye por la S-box (inversa en GF(2⁸))
+    2. ShiftRows (SR): desplazamiento cíclico de filas
+    3. MixColumns (MC): multiplicación polinomial en GF(2⁸) (MDS matrix)
+    4. AddRoundKey (ARK): XOR con round key
+
+  Ronda final: omite MixColumns.
+
+  Key schedule: clave de 32 bytes → 15 bloques de 16 bytes (240 bytes).
+
+  Implementación: AES-NI en x86_64 (tiempo constante); fallback bitsliced.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 12. GCM: MODO COUNTER CON AUTENTICACIÓN GHASH
+═══════════════════════════════════════════════════════════════════════════════
+
+12.1 AES-CTR (Counter Mode)
+
+  contador = nonce(96 bits) || 0x00000001
+  Para cada bloque de 16 bytes:
+    keystream = AES_ENC(clave, contador)
+    ciphertext = plaintext XOR keystream
+    contador += 1
+
+  Counter 0x00000000 está reservado para GHASH.
+
+12.2 GHASH (Galois Hash)
+
+  H = AES_ENC(clave, 0¹²⁸)
+  X₀ = 0
+  Para cada bloque ciphertext:  Xᵢ = (Xᵢ₋₁ ⊕ Cᵢ) • H   (GF(2¹²⁸))
+  S = AES_ENC(clave, nonce || 0x00000001)
+  Tag = X_último ⊕ S
+
+  Tag: 128 bits (16 bytes). Probabilidad de falsificación: 2⁻¹²⁸ por intento.
+
+12.3 Restricciones
+
+  Con nonce de 12 bytes aleatorio, el límite de seguridad es ~2³² mensajes
+  por clave antes de que la probabilidad de colisión de nonce sea apreciable.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 13. Código: src/mcrypto/mod.rs (encrypt_data + decrypt_data)
+═══════════════════════════════════════════════════════════════════════════════
+
+(Las funciones encrypt_data y decrypt_data ya se mostraron en § 9.
+Incluimos aquí el análisis de la implementación de AES-GCM.)
+
+encrypt_data (src/mcrypto/mod.rs:21-31):
+  - Crea Aes256Gcm::new desde la clave
+  - Genera nonce de 12 bytes con rng().fill() (getrandom vía ChaCha12)
+  - cipher.encrypt() produce ciphertext + tag de 16 bytes
+  - Concatena: [nonce(12) || ciphertext(N) || tag(16)] como Vec<u8>
+
+  El layout exacto en memoria:
+
+  offset 0x00:  nonce[0..12]   → 12 bytes (nonce)
+  offset 0x0C:  cipher[0..N]   → N bytes (ciphertext AES-CTR)
+  offset 0x0C+N: tag[0..16]    → 16 bytes (GHASH authentication tag)
+
+decrypt_data (src/mcrypto/mod.rs:33-44):
+  - split_at(12) → extrae nonce y ciphertext+tag
+  - cipher.decrypt():
+    1. Recalcula GHASH
+    2. Compara tag en tiempo constante
+    3. Si OK: descifra con AES-CTR, retorna Ok(plaintext)
+    4. Si FAIL: retorna Err(aes_gcm::Error)
+  - Error es un ZST: no revela si falló el tag o la clave
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 14. FORMATO EXACTO DEL CIPHERTEXT EN MEMORIA (hex dump)
+═══════════════════════════════════════════════════════════════════════════════
+
+Ejemplo concreto con contraseña "admin123":
+
+  Plaintext:  "admin123" → 8 bytes
+              [0x61, 0x64, 0x6d, 0x69, 0x6e, 0x31, 0x32, 0x33]
+
+  Nonce (12 bytes, aleatorio):
+              [0x3A, 0x1F, 0x92, 0xAB, 0x44, 0x56, 0x78, 0x90,
+               0x12, 0x34, 0x56, 0x78]
+
+  Ciphertext (8 bytes, AES-CTR):
+              [0xE4, 0x7A, 0x83, 0x9B, 0x1C, 0xDD, 0x22, 0xFE]
+
+  Tag (16 bytes, GHASH):
+              [0x9A, 0xBC, 0xDE, 0xF0, 0x12, 0x34, 0x56, 0x78,
+               0x90, 0xAB, 0xCD, 0xEF, 0x01, 0x23, 0x45, 0x67]
+
+  Vec<u8> final (36 bytes = 12 + 8 + 16):
+    3A 1F 92 AB 44 56 78 90 12 34 56 78  E4 7A 83 9B
+    1C DD 22 FE 9A BC DE F0 12 34 56 78  90 AB CD EF
+    01 23 45 67
+
+  Estructura: [nonce (12)] [ciphertext (N)] [tag (16)]
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 15. NONCE GENERATION (getrandom deep dive)
+═══════════════════════════════════════════════════════════════════════════════
+
+  let mut nonce_bytes = [0u8; 12];
+  rng().fill(&mut nonce_bytes);
+
+Pila de llamadas:
+
+  rand::rng() → ThreadRng (variable thread_local)
+      ↓
+  ThreadRng::fill_bytes()
+      ↓ (si necesita semilla fresca)
+  getrandom::getrandom(buf)
+      ↓
+  libc::syscall(SYS_getrandom, buf, len, 0)   # syscall 318 en x86_64
+      ↓
+  Linux kernel: drivers/char/random.c → CRNG
+      ↓
+  Fuentes de entropía:
+    - RDRAND (Intel RDSEED)
+    - Jitter entropy (diferencias de timing)
+    - Interrupciones de dispositivos
+    - Add_interrupt_randomness (teclado, mouse, red)
+      ↓
+  Salida: 12 bytes genuinamente aleatorios
+
+  ThreadRng usa ChaCha12 para generar bytes en lotes. La semilla se renueva
+  periódicamente (cada 256 KiB de output). Si hay bytes en el buffer interno,
+  NO llama a getrandom (más rápido, igual de seguro).
+
+  Probabilidad de que dos nonces colisionen: ~2⁻⁹⁶ por par.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 16. ¿QUÉ PASA CUANDO EL TAG NO COINCIDE? (caída del oráculo)
+═══════════════════════════════════════════════════════════════════════════════
+
+Atacante modifica 1 byte en el ciphertext almacenado en BD:
+
+  1. decrypt_data() recibe el ciphertext manipulado
+  2. cipher.decrypt():
+     a. GHASH recalcula tag → Tag_calc ≠ Tag_adjunto
+     b. Mismatch → retorna Err(AeadError) (tiempo constante)
+  3. decrypt_data() retorna Err(aes_gcm::Error)
+
+  En register():
+```rust
+    let decrypted_bytes = mcrypto::decrypt_data(&psswrd_hash, &master_key)
+        .unwrap();
+    // Err → panic! → Python exception
+```
+
+  En ok_password():
+```rust
+    if let Ok(decrypted) = mcrypto::decrypt_data(encrypted_password, &key) {
+        decrypted == plain_password.as_bytes()
+    } else {
+        false   // Err → login fallido
+    }
+```
+
+  El atacante NO puede:
+    - Obtener información sobre el plaintext
+    - Distinguir entre tag inválido y clave incorrecta
+    - Hacer padding oracle (GCM no tiene padding)
+    - Obtener descifrado parcial
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE IV: ORQUESTACIÓN — REGISTRO Y VERIFICACIÓN
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 17. Código: src/mtopy/mod.rs (register + ok_password + assign_role)
+═══════════════════════════════════════════════════════════════════════════════
+
+Este módulo orquesta el flujo completo de registro y verificación, conectando
+el cifrado simétrico (mcrypto) con la generación de wallets (mblockchain).
+
+```rust
+use argon2::password_hash;
+use sp_core::Pair;
+use sp_core::sr25519;
+use sp_core::crypto::Ss58Codec;
+
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
+pub mod validate_identity;
+use parity_scale_codec::Encode;
+
+use super::mblockchain;
+use super::mcrypto;
+
+pub fn register(psswrd: &str) -> (Vec<u8>, Vec<u8>, String, String) {
+    println!("Registering user...");
+
+    let usr_salt_obj = mcrypto::generate_random_salt(); 
+    let usr_salt = usr_salt_obj.as_str();
+    
+    // 1. Derivar la llave (esto no es un PasswordHash, es una clave cruda)
+    //    no debe ir a la DB
+    let master_key = mcrypto::derive_key(psswrd, usr_salt);
+    
+    let psswrd_hash = mcrypto::encrypt_data(psswrd.as_bytes(), &master_key);
+    let decrypted_bytes = mcrypto::decrypt_data(&psswrd_hash, &master_key).unwrap();
+    let is_valid = validate_identity::crypto_conformance(
+        &psswrd.as_bytes(), &psswrd_hash, &master_key
+    );
+
+    let wallet_info = mblockchain::wallet_gen::gen_wallet();
+
+    let pair = wallet_info.0;
+    let mnemonic_phrase = wallet_info.1;
+    let mnemonic_phrase_bytes = mnemonic_phrase.as_bytes();
+    let seed = wallet_info.2;
+    let pair_bytes = pair.to_raw_vec();
+
+    let encrypted_seed = mcrypto::encrypt_data(&seed, &master_key);
+    let encrypted_pair = mcrypto::encrypt_data(&pair_bytes, &master_key);
+    let encrypted_phrase = mcrypto::encrypt_data(mnemonic_phrase_bytes, &master_key);
+
+    let public_key = pair.public().to_ss58check();
+    (psswrd_hash, encrypted_phrase, usr_salt_obj, public_key)
+}
+
+
+pub fn ok_password(encrypted_password: &[u8], salt: &str, plain_password: &str) -> bool {
+    let key = mcrypto::derive_key(plain_password, salt);
+    if let Ok(decrypted) = mcrypto::decrypt_data(encrypted_password, &key) {
+        decrypted == plain_password.as_bytes()
+    } else {
+        false
+    }
+}
+
+pub fn assign_role (target_wallet: &[u8], key: &[u8; 32], new_role: Vec<u32>,
+                    nonce: u64, pair: &[u8]) -> Vec<u8> {
+    let target_wallet_bytes = mcrypto::decrypt_data(target_wallet, key)
+        .expect("Failed to decrypt target wallet");
+    let pair_bytes = mcrypto::decrypt_data(pair, key)
+        .expect("Failed to decrypt pair");
+    let target_wallet_typed = sr25519::Public::from_raw(
+        target_wallet_bytes.try_into().expect("Invalid wallet len"));
+    let pair_typed = sr25519::Pair::from_seed_slice(&pair_bytes)
+        .expect("Invalid seed");
+    
+    mblockchain::entity::user::assign_role_in_jam(
+        target_wallet_typed, new_role, nonce, &pair_typed)
+}
+```
+
+register() paso a paso:
+
+  Línea 17-20: genera salt (16 bytes → hex de 32 chars), obtiene &str
+  Línea 23:    derive_key → master_key de 32 bytes (Argon2id)
+  Línea 25:    autocifra la contraseña con AES-256-GCM
+  Línea 26:    prueba que el descifrado funciona (unwrap → panic si falla)
+  Línea 27-28: crypto_conformance → verificación adicional
+  Línea 30:    gen_wallet() → (Pair, mnemonic, seed)
+  Línea 35-37: cifra seed, pair_bytes y mnemonic individualmente
+  Línea 39:    SS58 encode de la clave pública
+  Línea 40:    retorna (psswrd_hash, encrypted_phrase, salt, public_key)
+
+  IMPORTANTE: encrypted_seed y encrypted_pair se generan pero NO se retornan.
+
+ok_password() paso a paso:
+
+  Línea 45: derive_key(plain_password, salt) → key de 32 bytes
+  Línea 46-49: decrypt_data(encrypted_password, &key)
+    - Err → false (contraseña incorrecta o datos manipulados)
+    - Ok(decrypted) → compara con plain_password.as_bytes()
+
+assign_role() paso a paso:
+
+  Línea 53: descifra target_wallet con la clave maestra
+  Línea 54: descifra pair con la clave maestra
+  Línea 55-56: reconstruye sr25519::Public y sr25519::Pair
+  Línea 59: firma payload JAM
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 18. Código: src/mtopy/validate_identity.rs (crypto_conformance)
+═══════════════════════════════════════════════════════════════════════════════
+
+```rust
+use crate::mcrypto;
+
+pub fn crypto_conformance(plain_content: &[u8], encrypted_data: &[u8],
+                          master_pass: &[u8; 32]) -> bool {
+    if let Ok(decrypted_target) = mcrypto::decrypt_data(encrypted_data, master_pass) {
+        return plain_content == decrypted_target;
+    }
+    false
+}
+```
+
+Esta función es una doble verificación inmediata: descifra y compara byte a
+byte. Se usa durante el registro para asegurar que el pipeline criptográfico
+completo (derivar → cifrar → descifrar) funcione correctamente.
+
+Detectaría:
+  - Bug en la implementación de Argon2 o AES-GCM
+  - Corrupción de memoria que altere la clave o los parámetros
+  - Diferencias entre las versiones de encrypt/decrypt
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 19. FLUJO DE REGISTRO: DIAGRAMA DE SECUENCIA
+═══════════════════════════════════════════════════════════════════════════════
+
+  T:0  register(psswrd) llamado desde Python
+  T:1  generate_random_salt() → salt: String (32 hex chars)
+  T:2  derive_key(psswrd, &salt) → master_key: [u8; 32]
+  T:3  encrypt_data(psswrd.as_bytes(), &master_key) → psswrd_hash: Vec<u8>
+  T:4  decrypt_data(&psswrd_hash, &master_key).unwrap() → verifica pipeline
+  T:5  crypto_conformance(...) → verificación adicional
+  T:6  gen_wallet() → (pair, mnemonic, seed)
+  T:7  encrypt_data(&seed, &master_key) → encrypted_seed
+  T:8  encrypt_data(&pair_bytes, &master_key) → encrypted_pair
+  T:9  encrypt_data(mnemonic.as_bytes(), &master_key) → encrypted_phrase
+  T:10 pair.public().to_ss58check() → public_key
+  T:11 Retorna (psswrd_hash, encrypted_phrase, salt, public_key)
+  T:12 master_key se destruye (sin zeroize)
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 20. FLUJO DE VERIFICACIÓN: DIAGRAMA DE SECUENCIA
+═══════════════════════════════════════════════════════════════════════════════
+
+  T:0  ok_password(enc_password, salt, plain_password) llamado desde Python
+  T:1  derive_key(plain_password, salt) → key: [u8; 32]
+  T:2  decrypt_data(enc_password, &key)
+         ┌── Ok(decrypted) ──→ compare con plain_password
+         │                       ┌── iguales → return true
+         │                       └── distintos → return false
+         └── Err ──→ return false
+  T:3  key se destruye (sin zeroize)
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE V: WALLETS SUBSTRATE
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 21. CURVA25519, RISTRETTO Y SCHNORRKEL
+═══════════════════════════════════════════════════════════════════════════════
+
+  sr25519 = Schnorrkel + Ristretto + Curve25519
+
+  1. Curve25519 (Montgomery): y² = x³ + 486662x² + x (mod p = 2²⁵⁵ - 19)
+
+  2. Ristretto: comprime edwards25519 (cofactor 8) en un subgrupo primo.
+     Evita ataques de small subgroup.
+     Todos los puntos Ristretto son del orden primo correcto.
+
+  3. Schnorrkel (Schnorr sobre Ristretto):
+     Usa STROBE-512 (basado en Keccak-f[1600]) como función hash.
+     Firma:
+       r = H("signing", seed || message) mod l
+       R = r × G
+       e = H("sign", R || A || message) mod l
+       s = r + e × a mod l
+       Firma = (R, s)  (64 bytes)
+
+  sr25519::Pair::verify():
+    s × G == R + e × A  (A = clave pública)
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 22. Código: src/mblockchain/wallet_gen.rs
+═══════════════════════════════════════════════════════════════════════════════
+
+```rust
+use sp_core::{sr25519, Pair};
+
+pub fn gen_wallet() -> (sr25519::Pair, String, [u8; 32]) {
+    sr25519::Pair::generate_with_phrase(None)
+}
+
+pub fn recover_wallet_from_phrase(phrase: &str) -> (sr25519::Pair, String, [u8; 32]) {
+    let (pair, seed) = sr25519::Pair::from_phrase(phrase, None)
+        .expect("Error recuperando wallet desde frase");
+    (pair, phrase.to_string(), seed)
+}
+```
+
+gen_wallet():
+  Llama a Pair::generate_with_phrase(None) de sp_core.
+  Internamente:
+    1. Entropy::generate() → 128-256 bits (getrandom)
+    2. Mnemonic::from_entropy(entropy) → BIP-39 wordlist
+    3. mnemonic.to_seed("") → PBKDF2 (64 bytes)
+    4. Pair::from_seed(&seed[..32]) → (sr25519::Pair, seed_32)
+
+  pair.to_raw_vec() → 64 bytes (clave privada completa Schnorrkel)
+  pair.public() → 32 bytes (punto Ristretto comprimido)
+
+recover_wallet_from_phrase():
+  Reconstruye el par desde la frase BIP-39. Útil para recovery.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 23. FRASE MNEMOTÉCNICA BIP-39
+═══════════════════════════════════════════════════════════════════════════════
+
+  generate_with_phrase() produce una frase de 12 palabras (128 bits entropía).
+
+  Generación:
+    1. Entropía: 128 bits de getrandom()
+    2. Checksum: SHA-256(entropía), tomar primeros 4 bits
+    3. Concatena: 128 + 4 = 132 bits
+    4. Divide en 12 grupos de 11 bits
+    5. Cada grupo indexa wordlist BIP-39 (2048 palabras)
+    6. Frase: palabras separadas por espacios (~100-150 caracteres)
+
+  Seed derivada:
+    seed = PBKDF2(
+        password = frase (UTF-8 NFKD),
+        salt = "mnemonic" + passphrase (UTF-8 NFKD),
+        dkLen = 64,
+        c = 2048,
+        prf = HMAC-SHA256
+    )
+    De esos 64 bytes, Substrate toma los primeros 32.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 24. DIRECCIÓN SS58
+═══════════════════════════════════════════════════════════════════════════════
+
+  SS58 = Base58 con prefijo de red + checksum Blake2b.
+
+  Codificación:
+    1. Prefijo: 42 (Substrate general) → 1 byte: 0x2A
+    2. Concatena: prefijo(1) || public_key(32) = 33 bytes
+    3. Checksum: Blake2b-512(concat)[0..2]
+    4. Concatena: prefijo(1) || public_key(32) || checksum(2) = 35 bytes
+    5. Base58 → string de ~47-48 chars
+
+  Ejemplo:
+    5GrwvaEF5zXb26Fz9rcQmD4y7H5KL9EhgNhGMbE8FLWm9YJr
+
+  Decodificación en Python:
+```python
+    # pip install substrate-interface
+    from substrateinterface import Keypair
+    addr = "5GrwvaEF5zXb26Fz9rcQmD4y7H5KL9EhgNhGMbE8FLWm9YJr"
+    keypair = Keypair(ss58_address=addr)
+    print(keypair.public_key.hex())
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 25. Código: src/mblockchain/entity/user.rs (assign_role_in_jam)
+═══════════════════════════════════════════════════════════════════════════════
+
+```rust
+use parity_scale_codec::{Encode, Decode};
+use sp_core::{sr25519, Pair, ByteArray};
+
+use serde::Deserialize;
+use std::collections::HashMap;
+use std::fs;
+
+use crate::mcrypto;
+
+#[derive(Encode, Decode)]
+pub struct UserAccount {
+    pub roles: Vec<u32>,
+    pub nonce: u64,
+}
+
+#[derive(Deserialize)]
+pub struct RoleConfig {
+    pub roles: HashMap<String, u32>,
+}
+
+impl RoleConfig {
+    pub fn load() -> Self {
+        let data = fs::read_to_string("roles.json")
+            .expect("No se pudo leer el config de roles");
+        let roles: HashMap<String, u32> = serde_json::from_str(&data)
+            .expect("Error al parsear JSON");
+        Self { roles }
+    }
+
+    pub fn get_id(&self, name: &str) -> u32 {
+        *self.roles.get(name).unwrap_or(&2)  // Por defecto User (2)
+    }
+
+    pub fn is_valid_role(&self, role_id: u32) -> bool {
+        self.roles.values().any(|&id| id == role_id)
+    }
+
+    pub fn is_superior_role(&self, role_id: u32, superior_role: u32) -> bool {
+        role_id < superior_role
+    }   
+}
+
+pub fn get_phrase_from_wallet(wallet: Vec<u8>, password: &str, salt: &str) -> String {
+    let wallet_decrypted = mcrypto::decrypt_data(
+        &wallet, &mcrypto::derive_key(password, salt));
+    String::from_utf8(wallet_decrypted.unwrap()).expect("Invalid UTF-8")
+}
+
+pub fn assign_role_in_jam(
+    target_wallet: sr25519::Public,
+    new_role: Vec<u32>,
+    nonce: u64,
+    admin_pair: &sr25519::Pair
+) -> Vec<u8> {
+    let payload = (target_wallet, new_role, nonce).encode();
+    let signature = admin_pair.sign(&payload);
+    [payload, signature.to_raw_vec()].concat()
+}
+```
+
+assign_role_in_jam:
+  1. Codifica (target_wallet, new_role, nonce) con SCALE
+  2. Firma el payload con sr25519::Pair::sign()
+  3. Concatena payload + signature(64 bytes) → paquete para JAM
+
+assign_role en mtopy ORQUESTA el flujo:
+  1. Descifra target_wallet y pair (AES-256-GCM)
+  2. Reconstruye sr25519::Public y sr25519::Pair
+  3. Llama assign_role_in_jam (construye payload + firma)
+
+get_phrase_from_wallet:
+  Descifra la frase mnemotécnica cifrada con la clave maestra derivada.
+
+UserAccount:
+  Estructura que JAM usará para almacenar roles y nonce de cada usuario.
+  Se codifica/decodifica con SCALE.
+
+RoleConfig:
+  Configuración de roles desde archivo JSON.
+  Números más bajos = más privilegios (admin=0, user=2).
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE VI: FIRMAS DIGITALES E INTEGRACIÓN JAM
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 26. ESQUEMA DE FIRMA SR25519
+═══════════════════════════════════════════════════════════════════════════════
+
+  signature = pair.sign(message)
+    → 64 bytes: R(32) || s(32)
+
+  Internamente (Schnorrkel):
+    1. r = H("signing", secret_seed || message) mod l
+    2. R = r × G
+    3. e = H("sign", R || public_key || message) mod l
+    4. s = r + e × secret_scalar mod l
+
+  Verificación:
+    s × G == R + e × public_key
+
+  Propiedades:
+    - Determinística (mismo mensaje + clave → misma firma)
+    - Batch verification (N firmas en O(N))
+    - No maleable (Schnorr, a diferencia de ECDSA)
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 27. Código: src/mblockchain/conformance.rs (sign_ok + can_perform_action)
+═══════════════════════════════════════════════════════════════════════════════
+
+```rust
+use sp_core::sr25519;
+use sp_core::Pair;
+use parity_scale_codec::Encode;
+
+/// Estructura simplificada de lo que se firma en JAM para un servicio
+#[derive(Encode)]
+struct JamSignedPayload {
+    service_id: u32,       // ID del servicio en JAM
+    code_hash: [u8; 32],   // Hash del código Wasm que se ejecutará
+    payload: Vec<u8>,      // Los datos reales de la transacción
+    nonce: u64,
+    genesis_hash: [u8; 32],
+}
+
+pub fn sign_ok(message: JamSignedPayload, signature_bytes: [u8; 64],
+               public_key: sr25519::Public) -> bool {
+    let signature = sr25519::Signature::from_raw(signature_bytes);
+    let encoded_message = message.encode(); 
+    sr25519::Pair::verify(&signature, &encoded_message, &public_key)
+}
+
+pub fn can_perform_action(user_roles: Vec<u32>, required_role_id: u32) -> bool {
+    user_roles.contains(&required_role_id)
+}
+```
+
+sign_ok:
+  Verifica que una firma sr25519 es válida para un payload JAM.
+  Codifica el mensaje con SCALE (mismo encoding que se usó al firmar).
+  verify() retorna true si s·G == R + e·A.
+
+can_perform_action:
+  Verifica RBAC simple: ¿el usuario tiene el rol requerido?
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 28. Código: src/mblockchain/entity/test.rs (test unitario)
+═══════════════════════════════════════════════════════════════════════════════
+
+```rust
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sp_core::{sr25519, Pair};
+
+    #[test]
+    fn test_assign_role_signature_is_valid() {
+        // 1. Creamos un Admin y un Usuario de prueba
+        let (admin_pair, _) = sr25519::Pair::generate();
+        let (user_pair, _) = sr25519::Pair::generate();
+        let target_wallet = user_pair.public();
+        
+        let new_role = vec![1, 2, 3];
+        let nonce = 1;
+
+        // 2. Ejecutamos tu función
+        let result_packet = assign_role_in_jam(
+            target_wallet, new_role.clone(), nonce, &admin_pair);
+
+        // 3. LA PRUEBA DE FUEGO: ¿Podemos verificarlo?
+        // Separamos el payload de la firma (sr25519 siempre son los últimos 64 bytes)
+        let signature_offset = result_packet.len() - 64;
+        let payload = &result_packet[..signature_offset];
+        let signature_bytes = &result_packet[signature_offset..];
+        
+        let signature = sr25519::Signature::from_raw(
+            signature_bytes.try_into().unwrap());
+
+        // 4. Verificación criptográfica
+        let is_valid = sr25519::Pair::verify(
+            &signature, payload, &admin_pair.public());
+
+        assert!(is_valid,
+            "La firma generada por assign_role_in_jam no es válida");
+        println!("✅ ¡La firma es auténtica y el paquete es íntegro!");
+    }
+}
+```
+
+Este test verifica el pipeline COMPLETO de firma JAM:
+
+  1. Genera un par admin (firmante) y un par user (target)
+  2. Llama assign_role_in_jam() → produce paquete [payload || firma]
+  3. Separa payload (todo excepto últimos 64 bytes) y firma (últimos 64 bytes)
+  4. Verifica con sr25519::Pair::verify()
+  5. Si assert! pasa → el pipeline de codificación SCALE + firma + verificación
+     es correcto
+
+  Ejecución:
+    cargo test -- test_assign_role_signature_is_valid
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 29. ROLES Y CONTROL DE ACCESO (roles.json)
+═══════════════════════════════════════════════════════════════════════════════
+
+```json
+{
+  "roles": {
+    "admin":  0,
+    "super":  1,
+    "user":   2,
+    "viewer": 3
+  }
+}
+```
+
+Valores menores = más privilegios. RoleConfig carga este archivo y provee:
+  - get_id("admin") → 0
+  - is_valid_role(2) → true
+  - is_superior_role(0, 2) → true (admin es superior a user)
+
+can_perform_action(user_roles, required_role_id) verifica si el usuario
+tiene el rol específico en su lista de roles.
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE VII: ALMACENAMIENTO Y PERSISTENCIA
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 30. ESQUEMA DE DATOS PERSISTIDOS
+═══════════════════════════════════════════════════════════════════════════════
+
+Datos producidos por register() que cruzan Rust → Python → BD:
+
+  ┌─────────────────────┬─────────────┬──────────────┬───────────────┐
+  │ Variable Rust       │ Tipo Rust   │ Tipo Python  │ Columna BD    │
+  ├─────────────────────┼─────────────┼──────────────┼───────────────┤
+  │ psswrd_hash         │ Vec<u8>     │ bytes        │ encrypted_pass│
+  │ encrypted_phrase    │ Vec<u8>     │ bytes        │ encrypted_seed│
+  │ usr_salt            │ String      │ str          │ salt          │
+  │ public_key          │ String      │ str          │ public_key    │
+  └─────────────────────┴─────────────┴──────────────┴───────────────┘
+
+Tamaños típicos:
+  encrypted_password:  12 + 8 + 16  = 36 bytes  (contraseña ~8 chars)
+  encrypted_mnemonic:  12 + 128 + 16 = 156 bytes (frase ~128 chars)
+  salt:                32 chars hex
+  public_key:          ~48 chars SS58
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 31. REPRESENTACIÓN EN PYTHON
+═══════════════════════════════════════════════════════════════════════════════
+
+```python
+>>> import rust_services
+>>> result = rust_services.register("mi_password_segura")
+>>> type(result)
+<class 'tuple'>
+>>> len(result)
+4
+>>> type(result[0]), type(result[1]), type(result[2]), type(result[3])
+(<class 'bytes'>, <class 'bytes'>, <class 'str'>, <class 'str'>)
+
+# Serialización para JSON (API REST):
+import base64
+
+def register_endpoint(password: str):
+    enc_pass, enc_mnemonic, salt, pub_key = rust_services.register(password)
+    return {
+        "encrypted_password": base64.b64encode(enc_pass).decode('ascii'),
+        "encrypted_mnemonic": base64.b64encode(enc_mnemonic).decode('ascii'),
+        "salt": salt,
+        "public_key": pub_key,
+    }
+
+def verify_endpoint(stored_enc: bytes, stored_salt: str, attempt: str) -> bool:
+    return rust_services.ok_password(stored_enc, stored_salt, attempt)
+```
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 32. MIGRACIONES A POSTGRESQL
+═══════════════════════════════════════════════════════════════════════════════
+
+```sql
+CREATE TABLE users (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    encrypted_password  BYTEA NOT NULL,
+    encrypted_mnemonic  BYTEA,
+    salt                VARCHAR(32) NOT NULL,
+    public_key          VARCHAR(48) NOT NULL,
+    roles               INTEGER[] NOT NULL DEFAULT '{2}',
+    nonce               BIGINT NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_users_public_key ON users (public_key);
+CREATE UNIQUE INDEX idx_users_salt ON users (salt);
+```
+
+  NOTA: BYTEA almacena bytes exactos. PostgreSQL muestra \x... en psql.
+
+  Inserción desde Python con psycopg2:
+```python
+    cur.execute(
+        "INSERT INTO users (encrypted_password, salt, public_key) VALUES (%s, %s, %s)",
+        (enc_password, salt, pub_key)
+    )
+```
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE VIII: SEGURIDAD
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 33. MATRIZ DE AMENAZAS Y MITIGACIONES
+═══════════════════════════════════════════════════════════════════════════════
+
+  ┌───────────────────────┬──────────────────┬─────────┬─────────────────────┐
+  │ Amenaza               │ Vector           │ Impacto │ Mitigación          │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Fuga de BD            │ SQLi, backup     │ ALTO    │ Datos cifrados con  │
+  │                       │                  │         │ AES-256-GCM         │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Fuerza bruta offline  │ Atacante con DB  │ MEDIO   │ Argon2id: ~8       │
+  │                       │                  │         │ intentos/s/núcleo   │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Clave en core dump    │ kill -6, crash   │ ALTO    │ NO mitigado         │
+  │                       │ /proc/mem        │         │ (ver recomendación) │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Clave en swap         │ SO mueve stack   │ ALTO    │ NO mitigado         │
+  │                       │ a swap          │         │ (mlock)              │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Nonce reuse           │ Forzar mismo     │ CRÍTICO │ Nonces aleatorios  │
+  │                       │ nonce + clave    │         │ 12B, colisión 2⁻⁹⁶  │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Manipulación de       │ Alterar          │ ALTO    │ Tag GHASH 128 bits  │
+  │ ciphertext en BD      │ psswrd_hash      │         │ detecta alteración  │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Replay (JAM)          │ Reenviar paquete │ MEDIO   │ Nonce en payload    │
+  │                       │ firmado          │         │ previene replay     │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Rainbow table         │ Precomputación   │ BAJO    │ Salt único de 16B   │
+  │                       │ de contraseñas   │         │ por usuario          │
+  ├───────────────────────┼──────────────────┼─────────┼─────────────────────┤
+  │ Small subgroup        │ Punto malicioso  │ BAJO    │ Ristretto elimina   │
+  │ (Curve25519)          │ en curva         │         │ cofactor 8           │
+  └───────────────────────┴──────────────────┴─────────┴─────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 34. LIMITACIONES CONOCIDAS
+═══════════════════════════════════════════════════════════════════════════════
+
+  1. Sin zeroize de claves en stack: [u8; 32] queda en memoria después de
+     usar. Solución: añadir crate zeroize.
+
+  2. Sin mlock(): páginas con claves pueden ser swappeades al disco.
+
+  3. Sin protección contra core dumps: ulimit -c 0 recomendado.
+
+  4. Sin 2FA: la contraseña es el único factor.
+
+  5. Sin rate limiting en ok_password(): el backend debe implementarlo.
+
+  6. Sin validación de contraseña en Rust: register() acepta cualquier
+     string. La validación debe hacerse en Python.
+
+  7. encrypted_seed y encrypted_pair se generan pero no se retornan:
+     desperdicio computacional (~2ms extra de AES-256-GCM).
+
+  8. Dependencia de entropía del sistema: si getrandom() falla en un
+     entorno con poca entropía, el RNG podría ser predecible.
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 35. RECOMENDACIONES DE PRODUCCIÓN
+═══════════════════════════════════════════════════════════════════════════════
+
+  Inmediatas:
+    [ ] Añadir crate zeroize y zeroizar claves al salir de scope
+    [ ] Configurar RLIMIT_CORE = 0 en systemd o entrypoint
+    [ ] Rate limiting en endpoint de login
+    [ ] Validar fortaleza de contraseña en register()
+
+  Corto plazo:
+    [ ] Usar mlock() para páginas con claves
+    [ ] Logging de intentos fallidos (sin registrar la contraseña)
+    [ ] Revisar y aumentar parámetros de Argon2 periódicamente
+    [ ] Test de integración que verifique zeroize (valgrind)
+
+  Medio plazo:
+    [ ] Considerar hash separado para verificación (no autocifrado)
+    [ ] Implementar recovery key independiente de la contraseña
+    [ ] Auditoría de seguridad por terceros
+
+
+═══════════════════════════════════════════════════════════════════════════════
+PARTE IX: REFERENCIAS
+═══════════════════════════════════════════════════════════════════════════════
+
+§ 36. DEPENDENCIAS DIRECTAS E INDIRECTAS
+═══════════════════════════════════════════════════════════════════════════════
+
+  Directas:
+    argon2            0.5.3     Argon2id KDF
+    aes-gcm           0.10.3    AES-256-GCM cipher
+    rand              0.10.1    CSPRNG (ChaCha12 + getrandom)
+    hex               0.4.3     Hex encoding
+    sp-core           40.0.0    sr25519, SS58, BIP-39, SCALE
+    parity-scale-codec 3.7.5    SCALE encoding
+    serde             1.0.228   Serialización (JSON)
+    serde_json        1.0.149   JSON parsing
+    pyo3              0.28.3    Python-Rust bridge
+
+  Indirectas (árbol de dependencias):
+    aes-gcm → aead, cipher, aes (AES-NI), polyval (GHASH)
+    argon2  → password-hash, blake2, blake2b_simd
+    sp-core → schnorrkel, curve25519-dalek, blake2-rfc, sha2,
+              bip39, pbkdf2, ss58-registry
+    rand    → rand_core, getrandom, chacha12
+    pyo3    → libffi, parking_lot, once_cell
+
+═══════════════════════════════════════════════════════════════════════════════
+§ 37. DOCUMENTACIÓN RELACIONADA
+═══════════════════════════════════════════════════════════════════════════════
+
+  - AES-GCM: NIST SP 800-38D
+  - Argon2:  RFC 9106
+  - BIP-39:  https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
+  - SS58:    https://docs.substrate.io/reference/address-format/
+  - SCALE:   https://docs.substrate.io/reference/scale-codec/
+  - Schnorrkel: https://github.com/w3f/schnorrkel
+  - Ristretto:  https://ristretto.group/
+  - Crates:  docs.rs/aes-gcm, docs.rs/argon2, docs.rs/sp-core
+  - PyO3:    https://pyo3.rs/v0.28.3/
+  - JAM:     Gray Paper: https://graypaper.com
+
+================================================================================
+                        FIN DEL DOCUMENTO
+================================================================================

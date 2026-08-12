@@ -1,0 +1,4 @@
+psycopg2-binary>=2.9
+fiona>=1.8
+shapely>=2.0
+python-dotenv>=1.0

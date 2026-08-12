@@ -1,0 +1,10 @@
+strawberry-graphql[fastapi]
+uvicorn
+python-dotenv
+maturin
+patchelf
+sqlalchemy
+asyncpg
+pyjwt
+redis
+casbin

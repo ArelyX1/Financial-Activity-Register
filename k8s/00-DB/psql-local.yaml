@@ -1,0 +1,91 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: incasur-psql-service
+  namespace: "2023241041"
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5433
+      targetPort: 5433
+  selector:
+    app: incasur-db
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: incasur-psql-data-pvc
+  namespace: "2023241041"
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: incasur-db
+  namespace: "2023241041"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: incasur-db
+  template:
+    metadata:
+      labels:
+        app: incasur-db
+    spec:
+      securityContext:
+        fsGroup: 1000 # Requerido por la imagen de Timescale (usuario postgres interno)
+      containers:
+        - name: postgres
+          image: timescale/timescaledb-ha:pg17
+          env:
+            - name: POSTGRES_DB
+              value: "incasur"
+            - name: POSTGRES_USER
+              value: "perripopo"
+            - name: POSTGRES_PASSWORD
+              value: "p3rr1p0p0"
+          ports:
+            - containerPort: 5433
+              name: postgres
+          volumeMounts:
+            - name: db-storage
+              mountPath: /home/postgres/pgdata # Ruta nativa de Spilo/Timescale
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - perripopo
+                - -d
+                - incasur
+            initialDelaySeconds: 45
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - perripopo
+                - -d
+                - incasur
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            timeoutSeconds: 3
+          resources:
+            requests:
+              memory: "256Mi"   # Ajustado para evitar bloqueos por cuota (Pending)
+              cpu: "100m"
+            limits:
+              memory: "1Gi"     # Suficiente RAM para procesamiento y carga del dump
+              cpu: "500m"
+      volumes:
+        - name: db-storage
+          persistentVolumeClaim:
+            claimName: incasur-psql-data-pvc
