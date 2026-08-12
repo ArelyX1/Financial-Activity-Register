@@ -80,11 +80,11 @@ spec:
             timeoutSeconds: 3
           resources:
             requests:
-              memory: "256Mi"   # Ajustado para evitar bloqueos por cuota (Pending)
-              cpu: "100m"
+              memory: "512Mi"
+              cpu: "200m"
             limits:
-              memory: "1Gi"     # Suficiente RAM para procesamiento y carga del dump
-              cpu: "500m"
+              memory: "4Gi"
+              cpu: "1000m"
       volumes:
         - name: db-storage
           persistentVolumeClaim:
