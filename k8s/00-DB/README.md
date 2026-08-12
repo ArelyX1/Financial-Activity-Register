@@ -114,6 +114,7 @@ kubectl exec <pod-name> -n 2023241041 -- bash -c 'cd /tmp/gadm && python3 seeDet
 
 ```bash
 # Port-forward del service al localhost
+# El puerto 5433 no interfiere con lidercom-db (5432)
 kubectl port-forward svc/incasur-psql-service 5433:5433 -n 2023241041
 ```
 
