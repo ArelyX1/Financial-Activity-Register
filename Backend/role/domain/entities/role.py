@@ -16,8 +16,9 @@ class Permission:
 
 @dataclass
 class Role:
+    c_name: str
+    c_category: str
     n_id_role: Optional[int] = None
-    c_name: str = ""
     c_description: Optional[str] = None
     b_is_system_role: Optional[bool] = False
     b_is_active: Optional[bool] = True

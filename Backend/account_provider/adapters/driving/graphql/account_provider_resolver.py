@@ -41,7 +41,7 @@ class CreateAccountProviderInput:
 
 @strawberry.type
 class Mutation:
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def create_account_provider(self, info: Info, token: str, input: CreateAccountProviderInput) -> AccountProvider:
         await enforce_access(token, "create_account_provider")
         async with AsyncSessionLocal() as session:

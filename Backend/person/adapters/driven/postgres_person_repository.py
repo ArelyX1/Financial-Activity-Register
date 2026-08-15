@@ -15,12 +15,14 @@ class S02PersonORM(Base):
     __tablename__ = "S02PERSON"
 
     nIdPerson = Column("nidperson", UUID, primary_key=True, server_default=text("gen_random_uuid()"))
-    cName = Column("cname", String(100), nullable=False)
-    cLastName = Column("clastname", String(100), nullable=False)
+    cName = Column("cname", String(50), nullable=True)
+    cMiddleName = Column("cmiddlename", String(50), nullable=True)
+    cMaternalSurname = Column("cmaternalsurname", String(50), nullable=True)
+    cPaternalSurname = Column("cpaternalsurname", String(50), nullable=True)
     nIdIdentificationType = Column("nididentificationtype", Integer, nullable=False)
-    cIdentificationNumber = Column("cidentificationnumber", String(20), nullable=False)
-    nBirthPlaceGadm = Column("nBirthPlaceGadm", Integer, quote=True)
-    nResidencePlaceGadm = Column("nResidencePlaceGadm", Integer, quote=True)
+    cIdentificationNumber = Column("cididentificationnumber", String(20), nullable=False)
+    nBirthPlaceGadm = Column("nbirthplacegadm", Integer)
+    nResidencePlaceGadm = Column("nresidenceplacegadm", Integer)
     tCreatedAt = Column("tcreatedat", DateTime, server_default=text("NOW()"))
     tModifiedAt = Column("tmodifiedat", DateTime)
 
@@ -83,6 +85,10 @@ class S01WorkshopORM(Base):
     bIsActive = Column("bisactive", Boolean, default=True)
 
 
+def _combine_last_name(paternal: Optional[str], maternal: Optional[str]) -> str:
+    return " ".join(part for part in (paternal, maternal) if part)
+
+
 class PostgresPersonRepository(PersonRepositoryPort):
     def __init__(self, session: AsyncSession):
         self._session = session
@@ -92,13 +98,15 @@ class PostgresPersonRepository(PersonRepositoryPort):
             SELECT
                 p.nidperson,
                 p.cname,
-                p.clastname,
+                p.cmiddlename,
+                p.cmaternalsurname,
+                p.cpaternalsurname,
                 p.nididentificationtype,
-                p.cidentificationnumber,
+                p.cididentificationnumber,
                 p.tcreatedat,
                 p.tmodifiedat,
-                p."nBirthPlaceGadm",
-                p."nResidencePlaceGadm",
+                p.nbirthplacegadm,
+                p.nresidenceplacegadm,
                 r.cname AS role_name
             FROM "S02PERSON" p
             LEFT JOIN "S02PERSON_ROLE" pr ON pr.nidperson = p.nidperson
@@ -111,14 +119,16 @@ class PostgresPersonRepository(PersonRepositoryPort):
             Person(
                 n_id_person=str(row[0]) if row[0] else None,
                 c_name=row[1],
-                c_last_name=row[2],
-                n_id_identification_type=row[3],
-                c_identification_number=row[4],
-                t_created_at=row[5],
-                t_modified_at=row[6],
-                n_birth_place_gadm=row[7],
-                n_residence_place_gadm=row[8],
-                role_name=row[9] or "",
+                c_middle_name=row[2],
+                c_maternal_surname=row[3],
+                c_paternal_surname=row[4],
+                n_id_identification_type=row[5],
+                c_identification_number=row[6],
+                t_created_at=row[7],
+                t_modified_at=row[8],
+                n_birth_place_gadm=row[9],
+                n_residence_place_gadm=row[10],
+                role_name=row[11] or "",
             )
             for row in rows
         ]
@@ -128,13 +138,15 @@ class PostgresPersonRepository(PersonRepositoryPort):
             SELECT
                 p.nidperson,
                 p.cname,
-                p.clastname,
+                p.cmiddlename,
+                p.cmaternalsurname,
+                p.cpaternalsurname,
                 p.nididentificationtype,
-                p.cidentificationnumber,
+                p.cididentificationnumber,
                 p.tcreatedat,
                 p.tmodifiedat,
-                p."nBirthPlaceGadm",
-                p."nResidencePlaceGadm",
+                p.nbirthplacegadm,
+                p.nresidenceplacegadm,
                 r.cname AS role_name,
                 u.cphotourl,
                 u.cusername,
@@ -143,7 +155,7 @@ class PostgresPersonRepository(PersonRepositoryPort):
             LEFT JOIN "S02PERSON_ROLE" pr ON pr.nidperson = p.nidperson
             LEFT JOIN "S02ROLE" r ON r.nidrole = pr.nidrole
             LEFT JOIN "S02USER" u ON u.niduser = p.nidperson
-            WHERE p.cidentificationnumber = :identification_number
+            WHERE p.cididentificationnumber = :identification_number
         """)
         result = await self._session.execute(sql, {"identification_number": identification_number})
         row = result.fetchone()
@@ -152,23 +164,23 @@ class PostgresPersonRepository(PersonRepositoryPort):
         return Person(
             n_id_person=str(row[0]) if row[0] else None,
             c_name=row[1],
-            c_last_name=row[2],
-            n_id_identification_type=row[3],
-            c_identification_number=row[4],
-            t_created_at=row[5],
-            t_modified_at=row[6],
-            n_birth_place_gadm=row[7],
-            n_residence_place_gadm=row[8],
-            role_name=row[9] or "",
-            c_photo_url=row[10],
-            c_username=row[11],
-            c_email=row[12],
+            c_middle_name=row[2],
+            c_maternal_surname=row[3],
+            c_paternal_surname=row[4],
+            n_id_identification_type=row[5],
+            c_identification_number=row[6],
+            t_created_at=row[7],
+            t_modified_at=row[8],
+            n_birth_place_gadm=row[9],
+            n_residence_place_gadm=row[10],
+            role_name=row[11] or "",
+            c_photo_url=row[12],
+            c_username=row[13],
+            c_email=row[14],
         )
 
     async def save(self, data: Person) -> Person:
         orm = S02PersonORM(
-            cName=data.c_name,
-            cLastName=data.c_last_name,
             nIdIdentificationType=data.n_id_identification_type,
             cIdentificationNumber=data.c_identification_number,
         )
@@ -338,16 +350,20 @@ class PostgresPersonRepository(PersonRepositoryPort):
         sql = text("""
             UPDATE "S02PERSON" SET
                 cname = :cname,
-                clastname = :clastname,
-                "nBirthPlaceGadm" = :birth_place,
-                "nResidencePlaceGadm" = :residence_place,
+                cmiddlename = :middle_name,
+                cmaternalsurname = :maternal_surname,
+                cpaternalsurname = :paternal_surname,
+                nbirthplacegadm = :birth_place,
+                nresidenceplacegadm = :residence_place,
                 tmodifiedat = :modified_at
-            WHERE cidentificationnumber = :identification_number
+            WHERE cididentificationnumber = :identification_number
             RETURNING *
         """)
         result = await self._session.execute(sql, {
             "cname": data.c_name,
-            "clastname": data.c_last_name,
+            "middle_name": data.c_middle_name,
+            "maternal_surname": data.c_maternal_surname,
+            "paternal_surname": data.c_paternal_surname,
             "birth_place": data.n_birth_place_gadm,
             "residence_place": data.n_residence_place_gadm,
             "modified_at": datetime.now(),
@@ -360,13 +376,15 @@ class PostgresPersonRepository(PersonRepositoryPort):
         return Person(
             n_id_person=str(row[0]) if row[0] else None,
             c_name=row[1],
-            c_last_name=row[2],
-            n_id_identification_type=row[3],
-            c_identification_number=row[4],
-            t_created_at=row[5],
-            t_modified_at=row[6],
-            n_birth_place_gadm=row[7],
-            n_residence_place_gadm=row[8],
+            c_middle_name=row[2],
+            c_maternal_surname=row[3],
+            c_paternal_surname=row[4],
+            n_id_identification_type=row[5],
+            c_identification_number=row[6],
+            t_created_at=row[7],
+            t_modified_at=row[8],
+            n_birth_place_gadm=row[9],
+            n_residence_place_gadm=row[10],
         )
 
     async def find_role_names_by_person_id(self, n_id_person: str) -> List[str]:
@@ -579,7 +597,7 @@ class PostgresPersonRepository(PersonRepositoryPort):
             .outerjoin(S02ParticipantORM, S02ParticipantORM.nIdParticipant == S02UserORM.nIdUser)
             .outerjoin(S02SuperiorORM, S02SuperiorORM.nIdSuperior == S02UserORM.nIdUser)
             .where(S02PersonORM.nIdPerson.in_(subq))
-            .order_by(S02PersonORM.cName, S02PersonORM.cLastName)
+            .order_by(S02PersonORM.cName, S02PersonORM.cMaternalSurname)
         )
         result = await self._session.execute(stmt)
         rows = result.fetchall()
@@ -598,7 +616,7 @@ class PostgresPersonRepository(PersonRepositoryPort):
             {
                 "id": str(row[0].nIdPerson),
                 "name": row[0].cName,
-                "last_name": row[0].cLastName,
+                "last_name": _combine_last_name(row[0].cPaternalSurname, row[0].cMaternalSurname),
                 "identification_number": row[0].cIdentificationNumber,
                 "id_identification_type": row[0].nIdIdentificationType,
                 "birth_place_gadm": row[0].nBirthPlaceGadm,
@@ -608,8 +626,6 @@ class PostgresPersonRepository(PersonRepositoryPort):
                 "is_registered": row[1] is not None,
                 "email": row[1].cEmail if row[1] else None,
                 "username": row[1].cUsername if row[1] else None,
-                "wallet": row[1].cWallet if row[1] else None,
-                "phrase": row[1].cPhrase if row[1] else None,
                 "provider_id": row[1].cProviderId if row[1] else None,
                 "is_active": row[1].bIsActive if row[1] else None,
                 "photo_url": row[1].cPhotoUrl if row[1] else None,
@@ -630,8 +646,9 @@ class PostgresPersonRepository(PersonRepositoryPort):
                 pp.nidparticipant,
                 p.nidperson,
                 p.cname,
-                p.clastname,
-                p.cidentificationnumber,
+                p.cpaternalsurname,
+                p.cmaternalsurname,
+                p.cididentificationnumber,
                 u.cemail,
                 u.cusername,
                 u.cphotourl,
@@ -641,7 +658,7 @@ class PostgresPersonRepository(PersonRepositoryPort):
             JOIN "S02USER" u ON u.niduser = pt.nidparticipant
             JOIN "S02PERSON" p ON p.nidperson = u.niduser
             WHERE pp.nidprogram = :program_id
-            ORDER BY p.cname, p.clastname
+            ORDER BY p.cname, p.cpaternalsurname
         """)
         result = await self._session.execute(sql, {"program_id": program_id})
         return [
@@ -649,12 +666,12 @@ class PostgresPersonRepository(PersonRepositoryPort):
                 "n_id_participant": str(row[0]),
                 "n_id_person": str(row[1]),
                 "c_name": row[2],
-                "c_last_name": row[3],
-                "c_identification_number": row[4],
-                "c_email": row[5],
-                "c_username": row[6],
-                "c_photo_url": row[7],
-                "b_is_active": row[8],
+                "c_last_name": _combine_last_name(row[3], row[4]),
+                "c_identification_number": row[5],
+                "c_email": row[6],
+                "c_username": row[7],
+                "c_photo_url": row[8],
+                "b_is_active": row[9],
             }
             for row in result.fetchall()
         ]
@@ -687,7 +704,9 @@ class PostgresPersonRepository(PersonRepositoryPort):
         return Person(
             n_id_person=str(orm.nIdPerson) if orm.nIdPerson else None,
             c_name=orm.cName,
-            c_last_name=orm.cLastName,
+            c_middle_name=orm.cMiddleName,
+            c_maternal_surname=orm.cMaternalSurname,
+            c_paternal_surname=orm.cPaternalSurname,
             n_id_identification_type=orm.nIdIdentificationType,
             c_identification_number=orm.cIdentificationNumber,
             n_birth_place_gadm=orm.nBirthPlaceGadm,

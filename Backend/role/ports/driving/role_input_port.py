@@ -9,3 +9,6 @@ class RoleInputPort(ABC):
 
     @abstractmethod
     async def find_by_name(self, name: str) -> Optional[Role]: ...
+
+    @abstractmethod
+    async def create(self, data: Role) -> Role: ...

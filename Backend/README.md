@@ -2,9 +2,7 @@ Requeriments:
 REDIS - CELERY queue & processing - Rust
 ML processing module - Python
 GraphQL - IDK xd i would use Rust and Python
-I need make Certificates - blockchain?
-Aproach the DB processing - Timescale
-Account security - Rust
+Account security - Rust (encryption de contraseñas + códigos de recuperación)
 
 Independent Modules:
 ML
@@ -13,19 +11,28 @@ LIDERCOM-APIS
 ACCOUNT SIGN UP
 CERTIFICATES
 
-Now for backend i need add this: Blockchain wallets for share info about accounts, like:
+## Seguridad de cuentas (Rust)
 
-El padre entra a la app (Login tradicional).
+El módulo `rust_services` (PyO3) NO usa blockchain. Su único propósito es:
 
-Tu backend mira la tabla Relacion_Familiar y confirma: "Sí, este UUID es el padre de este otro UUID".
+- `register(password)` → devuelve `(encrypted_password, salt)` cifrando la
+  contraseña con Argon2id + AES-256-GCM.
+- `ok_password(encrypted, salt, plain)` → verifica una contraseña.
+- `generate_recovery_code()` → código de 6 dígitos para recuperación.
 
-Aquí viene el truco: El backend toma la wallet_address del padre y la del hijo y le pregunta a la Blockchain: "Dame los registros firmados para la wallet 0xHijo que la wallet 0xPadre tiene permiso de ver".
+## Cambio de contraseña (flujo de recuperación)
 
-I mean the superior account can see the transactions that participant has been realized.
+1. `generate_recovery_code(identification_number)` → genera un código único de
+   6 dígitos, se guarda en Redis con TTL de 10 minutos (600 s).
+2. `change_password(identification_number, code, new_password)` → valida el
+   código (descartable: se elimina al primer uso válido), re-encripta la nueva
+   contraseña con `rust_services.register()` y actualiza `S02USER`
+   (`chashedpassword` + `csalt`).
 
 ## Redis
 
-El sistema usa Redis para cachear permisos de usuarios. Necesitas tener Redis corriendo:
+El sistema usa Redis para cachear permisos de usuarios y para los códigos de
+recuperación de contraseña. Necesitas tener Redis corriendo:
 
 ### Iniciar Redis
 
@@ -54,3 +61,14 @@ redis-cli ping
 ### Configuración
 Sin cambios, el `.env` ya apunta a `redis://localhost:6379/0`.
 Si Redis no está disponible, la app cae a DB directa sin cache.
+
+## APIs GraphQL activas
+
+Por el momento solo están expuestas las APIs de registro y sus relaciones:
+- `user_account` (registro de usuario), `person` (personas/registro),
+  `identification_type`, `account_provider`, `boundaries` (geo) y `auth`
+  (login/logout/refresh).
+- `password_recovery` (generar código + cambiar contraseña).
+
+El resto de módulos (`role`, `questionnaire`, `dashboard`) permanecen en el
+código pero desactivados del schema GraphQL (ver `graphql/schema/index.py`).

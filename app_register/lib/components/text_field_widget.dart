@@ -12,6 +12,7 @@ class TextFieldWidget extends StatefulWidget {
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
   final void Function(String)? onChanged;
+  final Color? fillColor;
 
   const TextFieldWidget({
     super.key,
@@ -25,6 +26,7 @@ class TextFieldWidget extends StatefulWidget {
     this.keyboardType,
     this.validator,
     this.onChanged,
+    this.fillColor,
   });
 
   @override
@@ -63,7 +65,7 @@ class _TextFieldWidgetState extends State<TextFieldWidget> {
           ),
         Container(
           decoration: BoxDecoration(
-            color: theme.alternate,
+            color: widget.fillColor ?? theme.alternate,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: _hasError ? theme.error : const Color(0xFFE1E1E1),

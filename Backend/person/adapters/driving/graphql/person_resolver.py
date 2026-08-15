@@ -14,8 +14,10 @@ from auth.adapters.driving.graphql.helpers import resolve_user_from_token, enfor
 @strawberry.type
 class Person:
     id: str
-    name: str
-    last_name: str
+    name: str | None = None
+    middle_name: str | None = None
+    maternal_surname: str | None = None
+    paternal_surname: str | None = None
     id_identification_type: int
     identification_number: str
     birth_place_gadm: int | None = None
@@ -60,8 +62,6 @@ class PersonWithUser:
     is_active: bool | None = None
     photo_url: str | None = None
     latest_access: str | None = None
-    wallet: str | None = None
-    phrase: str | None = None
     provider_id: str | None = None
     email_verified: bool | None = None
     is_registered: bool = False
@@ -120,7 +120,9 @@ class CreatePersonInput:
 class RegisterInput:
     identification_number: str
     name: str
-    lastName: str
+    middle_name: str | None = None
+    maternal_surname: str
+    paternal_surname: str
     birth_place_gadm: int
     residence_place_gadm: int
 
@@ -129,7 +131,9 @@ class RegisterInput:
 class UpdatePersonInput:
     identification_number: str
     name: str
-    last_name: str
+    middle_name: str | None = None
+    maternal_surname: str | None = None
+    paternal_surname: str | None = None
     birth_place_gadm: int
     residence_place_gadm: int
 
@@ -161,6 +165,40 @@ class UpdateWorkshopStatusInput:
     c_status: str
 
 
+async def _resolve_persons_by_role(role_names: List[str], token: str) -> List[PersonWithUser]:
+    await enforce_access(token, "persons_by_role")
+    async with AsyncSessionLocal() as session:
+        repo = PostgresPersonRepository(session)
+        service = PersonService(repo)
+        items = await service.find_persons_by_roles(role_names)
+        return [
+            PersonWithUser(
+                id=row["id"],
+                name=row["name"],
+                last_name=row["last_name"],
+                identification_number=row["identification_number"],
+                id_identification_type=row["id_identification_type"],
+                email=row["email"],
+                username=row["username"],
+                is_active=row["is_active"],
+                photo_url=row["photo_url"],
+                latest_access=row["latest_access"],
+                provider_id=row["provider_id"],
+                email_verified=row["email_verified"],
+                is_registered=row["is_registered"],
+                employee_active=row["employee_active"],
+                participant_active=row["participant_active"],
+                superior_active=row["superior_active"],
+                created_at=row["user_created_at"],
+                modified_at=row["modified_at"],
+                residence_place_gadm=row["residence_place_gadm"],
+                birth_place_gadm=row["birth_place_gadm"],
+                roles=row["roles"],
+            )
+            for row in items
+        ]
+
+
 @strawberry.type
 class Query:
     @strawberry.field
@@ -173,7 +211,9 @@ class Query:
                 Person(
                     id=p.n_id_person,
                     name=p.c_name,
-                    last_name=p.c_last_name,
+                    middle_name=p.c_middle_name,
+                    maternal_surname=p.c_maternal_surname,
+                    paternal_surname=p.c_paternal_surname,
                     id_identification_type=p.n_id_identification_type,
                     identification_number=p.c_identification_number,
                     birth_place_gadm=p.n_birth_place_gadm,
@@ -196,7 +236,9 @@ class Query:
             return Person(
                 id=p.n_id_person,
                 name=p.c_name,
-                last_name=p.c_last_name,
+                middle_name=p.c_middle_name,
+                maternal_surname=p.c_maternal_surname,
+                paternal_surname=p.c_paternal_surname,
                 id_identification_type=p.n_id_identification_type,
                 identification_number=p.c_identification_number,
                 birth_place_gadm=p.n_birth_place_gadm,
@@ -235,39 +277,7 @@ class Query:
 
     @strawberry.field
     async def persons_by_role(self, role_names: List[str], token: str) -> List[PersonWithUser]:
-        await enforce_access(token, "persons_by_role")
-        async with AsyncSessionLocal() as session:
-            repo = PostgresPersonRepository(session)
-            service = PersonService(repo)
-            items = await service.find_persons_by_roles(role_names)
-            return [
-                PersonWithUser(
-                    id=row["id"],
-                    name=row["name"],
-                    last_name=row["last_name"],
-                    identification_number=row["identification_number"],
-                    id_identification_type=row["id_identification_type"],
-                    email=row["email"],
-                    username=row["username"],
-                    is_active=row["is_active"],
-                    photo_url=row["photo_url"],
-                    latest_access=row["latest_access"],
-                    wallet=row["wallet"],
-                    phrase=row["phrase"],
-                    provider_id=row["provider_id"],
-                    email_verified=row["email_verified"],
-                    is_registered=row["is_registered"],
-                    employee_active=row["employee_active"],
-                    participant_active=row["participant_active"],
-                    superior_active=row["superior_active"],
-                    created_at=row["user_created_at"],
-                    modified_at=row["modified_at"],
-                    residence_place_gadm=row["residence_place_gadm"],
-                    birth_place_gadm=row["birth_place_gadm"],
-                    roles=row["roles"],
-                )
-                for row in items
-            ]
+        return await _resolve_persons_by_role(role_names, token)
 
     @strawberry.field
     async def available_programs(self, identification_number: str, token: str) -> List[AvailableProgramType]:
@@ -316,6 +326,14 @@ class Query:
             data = await service.find_participants_by_program(program_id)
             return [ProgramParticipantType(**p) for p in data]
 
+
+@strawberry.type
+class PersonRolesQuery:
+    @strawberry.field
+    async def persons_by_role(self, role_names: List[str], token: str) -> List[PersonWithUser]:
+        return await _resolve_persons_by_role(role_names, token)
+
+
 @strawberry.type
 class Mutation:
     @strawberry.mutation
@@ -338,8 +356,6 @@ class Mutation:
                 repo = PostgresPersonRepository(session)
                 service = PersonService(repo)
                 entity = PersonEntity(
-                    c_name="",
-                    c_last_name="",
                     n_id_identification_type=input.id_identification_type,
                     c_identification_number=input.identification_number,
                 )
@@ -349,7 +365,9 @@ class Mutation:
                 return Person(
                     id=created.n_id_person,
                     name=created.c_name,
-                    last_name=created.c_last_name,
+                    middle_name=created.c_middle_name,
+                    maternal_surname=created.c_maternal_surname,
+                    paternal_surname=created.c_paternal_surname,
                     id_identification_type=created.n_id_identification_type,
                     identification_number=created.c_identification_number,
                     birth_place_gadm=created.n_birth_place_gadm,
@@ -375,7 +393,9 @@ class Mutation:
             role_name = existing.role_name.lower()
             entity = PersonEntity(
                 c_name=input.name.strip(),
-                c_last_name=input.lastName.strip(),
+                c_middle_name=input.middle_name.strip() if input.middle_name else None,
+                c_maternal_surname=input.maternal_surname.strip(),
+                c_paternal_surname=input.paternal_surname.strip(),
                 c_identification_number=input.identification_number,
                 n_birth_place_gadm=input.birth_place_gadm,
                 n_residence_place_gadm=input.residence_place_gadm,
@@ -388,7 +408,9 @@ class Mutation:
             return Person(
                 id=updated.n_id_person,
                 name=updated.c_name,
-                last_name=updated.c_last_name,
+                middle_name=updated.c_middle_name,
+                maternal_surname=updated.c_maternal_surname,
+                paternal_surname=updated.c_paternal_surname,
                 id_identification_type=updated.n_id_identification_type,
                 identification_number=updated.c_identification_number,
                 birth_place_gadm=updated.n_birth_place_gadm,
@@ -398,7 +420,7 @@ class Mutation:
                 role=role_name,
             )
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def update_person(self, input: UpdatePersonInput) -> Person:
         async with AsyncSessionLocal() as session:
             repo = PostgresPersonRepository(session)
@@ -410,7 +432,9 @@ class Mutation:
             role_name = existing.role_name.lower()
             entity = PersonEntity(
                 c_name=input.name.strip(),
-                c_last_name=input.last_name.strip(),
+                c_middle_name=input.middle_name.strip() if input.middle_name else None,
+                c_maternal_surname=input.maternal_surname.strip() if input.maternal_surname else None,
+                c_paternal_surname=input.paternal_surname.strip() if input.paternal_surname else None,
                 c_identification_number=input.identification_number,
                 n_birth_place_gadm=input.birth_place_gadm,
                 n_residence_place_gadm=input.residence_place_gadm,
@@ -423,7 +447,9 @@ class Mutation:
             return Person(
                 id=updated.n_id_person,
                 name=updated.c_name,
-                last_name=updated.c_last_name,
+                middle_name=updated.c_middle_name,
+                maternal_surname=updated.c_maternal_surname,
+                paternal_surname=updated.c_paternal_surname,
                 id_identification_type=updated.n_id_identification_type,
                 identification_number=updated.c_identification_number,
                 birth_place_gadm=updated.n_birth_place_gadm,
@@ -457,7 +483,9 @@ class Mutation:
             return Person(
                 id=person.n_id_person,
                 name=person.c_name,
-                last_name=person.c_last_name,
+                middle_name=person.c_middle_name,
+                maternal_surname=person.c_maternal_surname,
+                paternal_surname=person.c_paternal_surname,
                 id_identification_type=person.n_id_identification_type,
                 identification_number=person.c_identification_number,
                 birth_place_gadm=person.n_birth_place_gadm,
@@ -486,7 +514,7 @@ class Mutation:
             await service.conform_role_remove(person_id, role_name)
             return True
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def assign_employee_program(self, program_id: str, token: str) -> str:
         user_data = await resolve_user_from_token(token)
         async with AsyncSessionLocal() as session:
@@ -495,7 +523,7 @@ class Mutation:
             await service.assign_employee_program(user_data["user_id"], program_id)
             return "OK"
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def assign_participant_program(self, input: AssignParticipantProgramInput) -> str:
         await resolve_user_from_token(input.token)
         async with AsyncSessionLocal() as session:
@@ -507,7 +535,7 @@ class Mutation:
             await repo.save_participant_program(str(person.n_id_person), input.program_id)
             return "OK"
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def deactivate_participant_program(self, participant_id: str, program_id: str, token: str) -> str:
         await enforce_access(token, "deactivate_participant_program")
         async with AsyncSessionLocal() as session:
@@ -516,7 +544,7 @@ class Mutation:
             await service.deactivate_participant_program(participant_id, program_id)
             return "OK"
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def activate_participant_program(self, participant_id: str, program_id: str, token: str) -> str:
         await enforce_access(token, "activate_participant_program")
         async with AsyncSessionLocal() as session:
@@ -525,7 +553,7 @@ class Mutation:
             await service.activate_participant_program(participant_id, program_id)
             return "OK"
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def create_workshop(self, input: CreateWorkshopInput, token: str) -> str:
         await enforce_access(token, "create_workshop")
         async with AsyncSessionLocal() as session:
@@ -539,7 +567,7 @@ class Mutation:
             )
             return "OK"
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def update_workshop_status(self, input: UpdateWorkshopStatusInput, token: str) -> str:
         await enforce_access(token, "update_workshop_status")
         async with AsyncSessionLocal() as session:

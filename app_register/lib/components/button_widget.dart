@@ -29,7 +29,7 @@ class ButtonWidget extends StatelessWidget {
       Colors.transparent,
     ][variant.index];
     final textColors = [
-      Colors.white,
+      theme.onPrimary,
       Colors.white,
       Colors.white,
       theme.primary,
@@ -55,12 +55,12 @@ class ButtonWidget extends StatelessWidget {
           onTap: loading ? null : onPressed,
           child: Center(
             child: loading
-                ? const SizedBox(
+                ? SizedBox(
                     width: 22,
                     height: 22,
                     child: CircularProgressIndicator(
                       strokeWidth: 2.5,
-                      color: Colors.white,
+                      color: textColors,
                     ),
                   )
                 : Row(

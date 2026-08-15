@@ -6,8 +6,10 @@ from datetime import datetime
 @dataclass
 class Person:
     n_id_person: Optional[str] = None
-    c_name: str = ""
-    c_last_name: str = ""
+    c_name: Optional[str] = None
+    c_middle_name: Optional[str] = None
+    c_maternal_surname: Optional[str] = None
+    c_paternal_surname: Optional[str] = None
     n_id_identification_type: int = 0
     c_identification_number: str = ""
     n_birth_place_gadm: Optional[int] = None

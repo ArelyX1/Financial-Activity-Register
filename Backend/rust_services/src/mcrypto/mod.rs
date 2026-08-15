@@ -1,6 +1,5 @@
 use argon2::{
-    password_hash::{SaltString},
-    Argon2, PasswordHasher
+    Argon2
 };
 use aes_gcm::{Aes256Gcm, aead::{KeyInit, Aead}, Nonce};
 use rand::{RngExt, rng};
@@ -48,6 +47,16 @@ pub fn generate_random_salt() -> String {
     // Usamos rng() aquí también para consistencia
     rng().fill(&mut salt_bytes);
     hex::encode(salt_bytes)
+}
+
+pub fn generate_numeric_code(length: usize) -> String {
+    let mut code = String::with_capacity(length);
+    for _ in 0..length {
+        let mut byte = [0u8; 1];
+        rng().fill(&mut byte);
+        code.push(char::from(b'0' + (byte[0] % 10)));
+    }
+    code
 }
 
 pub fn decrypt_to_string(vec_data: Vec<u8>) -> String {

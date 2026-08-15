@@ -54,20 +54,24 @@ class Query:
         return await RedisClient.ping()
 
     @strawberry.field
+    async def go_mobil_app(self, info: Info, token: str) -> bool:
+        return await check_access(token, "go_mobil_app")
+
+    @strawberry.field
     async def go_admin_page(self, info: Info, token: str) -> bool:
         return await check_access(token, "go_admin_page")
 
-    @strawberry.field
-    async def go_observer_page(self, info: Info, token: str) -> bool:
-        return await check_access(token, "go_observer_page")
+    # @strawberry.field
+    # async def go_observer_page(self, info: Info, token: str) -> bool:
+    #     return await check_access(token, "go_observer_page")
 
-    @strawberry.field
-    async def go_superior_page(self, info: Info, token: str) -> bool:
-        return await check_access(token, "go_superior_page")
+    # @strawberry.field
+    # async def go_superior_page(self, info: Info, token: str) -> bool:
+    #     return await check_access(token, "go_superior_page")
 
-    @strawberry.field
-    async def go_participant_page(self, info: Info, token: str) -> bool:
-        return await check_access(token, "go_participant_page")
+    # @strawberry.field
+    # async def go_participant_page(self, info: Info, token: str) -> bool:
+    #     return await check_access(token, "go_participant_page")
 
 
 @strawberry.type

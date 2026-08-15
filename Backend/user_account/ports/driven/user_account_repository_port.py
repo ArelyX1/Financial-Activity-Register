@@ -18,3 +18,6 @@ class UserAccountRepositoryPort(ABC):
 
     @abstractmethod
     async def update_status(self, n_id_user: str, b_is_active: bool) -> None: ...
+
+    @abstractmethod
+    async def update_password(self, n_id_user: str, c_hashed_password: str, c_salt: str) -> None: ...

@@ -1,0 +1,642 @@
+import abc
+import asyncio
+import json
+from collections.abc import AsyncGenerator, Callable, Mapping, Sequence
+from datetime import timedelta
+from typing import (
+    Any,
+    Generic,
+    TypeGuard,
+    cast,
+    overload,
+)
+
+from cross_web import AsyncHTTPRequestAdapter, HTTPException
+from graphql import GraphQLError
+
+from strawberry.exceptions import MissingQueryError
+from strawberry.file_uploads.utils import replace_placeholders_with_files
+from strawberry.http import (
+    GraphQLHTTPResponse,
+    GraphQLRequestData,
+    GraphQLRequestProtocol,
+    process_result,
+)
+from strawberry.http.ides import GraphQL_IDE
+from strawberry.schema._graphql_core import (
+    GraphQLIncrementalExecutionResults,
+    InitialIncrementalExecutionResult,
+    SubsequentIncrementalExecutionResult,
+)
+from strawberry.schema.base import BaseSchema
+from strawberry.schema.exceptions import (
+    CannotGetOperationTypeError,
+    InvalidOperationTypeError,
+)
+from strawberry.subscriptions import GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL
+from strawberry.subscriptions.protocols.graphql_transport_ws.handlers import (
+    BaseGraphQLTransportWSHandler,
+)
+from strawberry.subscriptions.protocols.graphql_ws.handlers import BaseGraphQLWSHandler
+from strawberry.types import ExecutionResult, SubscriptionExecutionResult
+from strawberry.types.graphql import OperationType
+from strawberry.types.unset import UNSET, UnsetType
+
+from .base import BaseView
+from .parse_content_type import parse_content_type
+from .streaming import (
+    AsyncTextStream,
+    HTTPStreamTransport,
+    MultipartTransport,
+    merge_stream_with_heartbeat,
+)
+from .typevars import (
+    Context,
+    Request,
+    Response,
+    RootValue,
+    SubResponse,
+    WebSocketRequest,
+    WebSocketResponse,
+)
+
+
+class AsyncWebSocketAdapter(abc.ABC):
+    def __init__(self, view: "AsyncBaseHTTPView") -> None:
+        self.view = view
+
+    @abc.abstractmethod
+    def iter_json(
+        self, *, ignore_parsing_errors: bool = False
+    ) -> AsyncGenerator[object, None]: ...
+
+    @abc.abstractmethod
+    async def send_json(self, message: Mapping[str, object]) -> None: ...
+
+    @abc.abstractmethod
+    async def close(self, code: int, reason: str) -> None: ...
+
+
+class AsyncBaseHTTPView(
+    abc.ABC,
+    BaseView[Request],
+    Generic[
+        Request,
+        Response,
+        SubResponse,
+        WebSocketRequest,
+        WebSocketResponse,
+        Context,
+        RootValue,
+    ],
+):
+    schema: BaseSchema
+    graphql_ide: GraphQL_IDE | None
+    keep_alive = False
+    keep_alive_interval: float | None = None
+    connection_init_wait_timeout: timedelta = timedelta(minutes=1)
+    max_subscriptions_per_connection: int | None = 100
+    protocols: Sequence[str] = (
+        GRAPHQL_TRANSPORT_WS_PROTOCOL,
+        GRAPHQL_WS_PROTOCOL,
+    )
+    request_adapter_class: Callable[[Request], AsyncHTTPRequestAdapter]
+    websocket_adapter_class: Callable[
+        [
+            "AsyncBaseHTTPView[Any, Any, Any, Any, Any, Context, RootValue]",
+            WebSocketRequest,
+            WebSocketResponse,
+        ],
+        AsyncWebSocketAdapter,
+    ]
+    graphql_transport_ws_handler_class: type[
+        BaseGraphQLTransportWSHandler[Context, RootValue]
+    ] = BaseGraphQLTransportWSHandler[Context, RootValue]
+    graphql_ws_handler_class: type[BaseGraphQLWSHandler[Context, RootValue]] = (
+        BaseGraphQLWSHandler[Context, RootValue]
+    )
+    multipart_transport_class: type[MultipartTransport] = MultipartTransport
+
+    @property
+    @abc.abstractmethod
+    def allow_queries_via_get(self) -> bool: ...
+
+    @abc.abstractmethod
+    async def get_sub_response(self, request: Request) -> SubResponse: ...
+
+    @abc.abstractmethod
+    async def get_context(
+        self,
+        request: Request | WebSocketRequest,
+        response: SubResponse | WebSocketResponse,
+    ) -> Context: ...
+
+    @abc.abstractmethod
+    async def get_root_value(
+        self, request: Request | WebSocketRequest
+    ) -> RootValue | None: ...
+
+    @abc.abstractmethod
+    def create_response(
+        self,
+        response_data: GraphQLHTTPResponse | list[GraphQLHTTPResponse],
+        sub_response: SubResponse,
+    ) -> Response: ...
+
+    @abc.abstractmethod
+    async def render_graphql_ide(self, request: Request) -> Response: ...
+
+    async def create_streaming_response(
+        self,
+        request: Request,
+        stream: Callable[[], AsyncGenerator[str, None]],
+        sub_response: SubResponse,
+        headers: Mapping[str, str],
+    ) -> Response:
+        raise ValueError("Multipart responses are not supported")
+
+    @abc.abstractmethod
+    def is_websocket_request(
+        self, request: Request | WebSocketRequest
+    ) -> TypeGuard[WebSocketRequest]: ...
+
+    @abc.abstractmethod
+    async def pick_websocket_subprotocol(
+        self, request: WebSocketRequest
+    ) -> str | None: ...
+
+    @abc.abstractmethod
+    async def create_websocket_response(
+        self, request: WebSocketRequest, subprotocol: str | None
+    ) -> WebSocketResponse: ...
+
+    @property
+    def websocket_subprotocols(self) -> list[str]:
+        """WebSocket subprotocols to advertise during the handshake.
+
+        Derived from ``protocols`` by dropping any non-WebSocket entries (such
+        as ``graphql-sse``), so enabling SSE through ``subscription_protocols``
+        does not leak a non-WebSocket token into WebSocket negotiation.
+        """
+        return [
+            protocol
+            for protocol in self.protocols
+            if protocol in (GRAPHQL_TRANSPORT_WS_PROTOCOL, GRAPHQL_WS_PROTOCOL)
+        ]
+
+    async def execute_operation(  # noqa: PLR0917
+        self,
+        request: Request,
+        request_adapter: AsyncHTTPRequestAdapter,
+        request_data: GraphQLRequestData | list[GraphQLRequestData],
+        context: Context,
+        root_value: RootValue | None,
+        sub_response: SubResponse,
+    ) -> ExecutionResult | list[ExecutionResult] | SubscriptionExecutionResult:
+        allowed_operation_types = OperationType.from_http(request_adapter.method)
+
+        if not self.allow_queries_via_get and request_adapter.method == "GET":
+            allowed_operation_types = allowed_operation_types - {OperationType.QUERY}
+
+        if isinstance(request_data, list):
+            # batch GraphQL requests
+            return await asyncio.gather(
+                *[
+                    self.execute_single(
+                        request=request,
+                        request_adapter=request_adapter,
+                        sub_response=sub_response,
+                        context=context,
+                        root_value=root_value,
+                        request_data=data,
+                    )
+                    for data in request_data
+                ]
+            )
+
+        if transport := self._get_stream_transport(request_data.protocol):
+            return await self.schema.stream(
+                request_data.query,  # type: ignore
+                variable_values=request_data.variables,
+                context_value=context,
+                root_value=root_value,
+                operation_name=request_data.operation_name,
+                operation_extensions=request_data.extensions,
+                allowed_operation_types=transport.allowed_operation_types(
+                    allowed_operation_types
+                ),
+            )
+
+        return await self.execute_single(
+            request=request,
+            request_adapter=request_adapter,
+            sub_response=sub_response,
+            context=context,
+            root_value=root_value,
+            request_data=request_data,
+        )
+
+    async def execute_single(  # noqa: PLR0917
+        self,
+        request: Request,
+        request_adapter: AsyncHTTPRequestAdapter,
+        sub_response: SubResponse,
+        context: Context,
+        root_value: RootValue | None,
+        request_data: GraphQLRequestData,
+    ) -> ExecutionResult:
+        allowed_operation_types = OperationType.from_http(request_adapter.method)
+
+        if not self.allow_queries_via_get and request_adapter.method == "GET":
+            allowed_operation_types = allowed_operation_types - {OperationType.QUERY}
+
+        try:
+            result = await self.schema.execute(
+                request_data.query,
+                root_value=root_value,
+                variable_values=request_data.variables,
+                context_value=context,
+                operation_name=request_data.operation_name,
+                allowed_operation_types=allowed_operation_types,
+                operation_extensions=request_data.extensions,
+            )
+        except CannotGetOperationTypeError as e:
+            raise HTTPException(400, e.as_http_error_reason()) from e
+        except InvalidOperationTypeError as e:
+            raise HTTPException(
+                400, e.as_http_error_reason(request_adapter.method)
+            ) from e
+        except MissingQueryError as e:
+            raise HTTPException(400, "No GraphQL query found in the request") from e
+
+        return result
+
+    async def parse_multipart(self, request: AsyncHTTPRequestAdapter) -> dict[str, str]:
+        try:
+            form_data = await request.get_form_data()
+        except ValueError as e:
+            raise HTTPException(400, "Unable to parse the multipart body") from e
+
+        operations = form_data.form.get("operations", "{}")
+        files_map = form_data.form.get("map", "{}")
+        files = form_data.files
+
+        if isinstance(operations, (bytes, str)):
+            operations = self.parse_json(operations)
+
+        if isinstance(files_map, (bytes, str)):
+            files_map = self.parse_json(files_map)
+
+        try:
+            return replace_placeholders_with_files(operations, files_map, files)
+        except KeyError as e:
+            raise HTTPException(400, "File(s) missing in form data") from e
+
+    def _handle_errors(
+        self, errors: list[GraphQLError], response_data: GraphQLHTTPResponse
+    ) -> None:
+        """Hook to allow custom handling of errors, used by the Sentry Integration."""
+
+    @overload
+    async def run(
+        self,
+        request: Request,
+        context: Context = UNSET,
+        root_value: RootValue | None = UNSET,
+    ) -> Response: ...
+
+    @overload
+    async def run(
+        self,
+        request: WebSocketRequest,
+        context: Context = UNSET,
+        root_value: RootValue | None = UNSET,
+    ) -> WebSocketResponse: ...
+
+    async def run(
+        self,
+        request: Request | WebSocketRequest,
+        context: Context = UNSET,
+        root_value: RootValue | None = UNSET,
+    ) -> Response | WebSocketResponse:
+        root_value = (
+            await self.get_root_value(request) if root_value is UNSET else root_value
+        )
+
+        if self.is_websocket_request(request):
+            websocket_subprotocol = await self.pick_websocket_subprotocol(request)
+            websocket_response = await self.create_websocket_response(
+                request, websocket_subprotocol
+            )
+            websocket = self.websocket_adapter_class(self, request, websocket_response)
+
+            context = (
+                await self.get_context(request, response=websocket_response)
+                if context is UNSET
+                else context
+            )
+
+            if websocket_subprotocol == GRAPHQL_TRANSPORT_WS_PROTOCOL:
+                await self.graphql_transport_ws_handler_class(
+                    view=self,
+                    websocket=websocket,
+                    context=context,
+                    root_value=root_value,
+                    schema=self.schema,
+                    connection_init_wait_timeout=self.connection_init_wait_timeout,
+                    max_subscriptions_per_connection=self.max_subscriptions_per_connection,
+                ).handle()
+            elif websocket_subprotocol == GRAPHQL_WS_PROTOCOL:
+                await self.graphql_ws_handler_class(
+                    view=self,
+                    websocket=websocket,
+                    context=context,
+                    root_value=root_value,
+                    schema=self.schema,
+                    keep_alive=self.keep_alive,
+                    keep_alive_interval=self.keep_alive_interval,
+                    max_subscriptions_per_connection=self.max_subscriptions_per_connection,
+                ).handle()
+            else:
+                await websocket.close(4406, "Subprotocol not acceptable")
+
+            return websocket_response
+        request = cast("Request", request)
+
+        request_adapter = self.request_adapter_class(request)
+        sub_response = await self.get_sub_response(request)
+        context = (
+            await self.get_context(request, response=sub_response)
+            if context is UNSET
+            else context
+        )
+
+        if not self.is_request_allowed(request_adapter):
+            raise HTTPException(405, "GraphQL only supports GET and POST requests.")
+
+        if self.should_render_graphql_ide(request_adapter):
+            if self.graphql_ide:
+                return await self.render_graphql_ide(request)
+            raise HTTPException(404, "Not Found")
+
+        try:
+            request_data = await self.parse_http_body(request_adapter)
+        except json.decoder.JSONDecodeError as e:
+            raise HTTPException(400, "Unable to parse request body as JSON") from e
+        except KeyError as e:
+            raise HTTPException(400, "File(s) missing in form data") from e
+
+        result = await self.execute_operation(
+            request=request,
+            request_adapter=request_adapter,
+            request_data=request_data,
+            context=context,
+            root_value=root_value,
+            sub_response=sub_response,
+        )
+
+        if isinstance(result, SubscriptionExecutionResult):
+            # Only single (non-batch) operations stream; a batch with a
+            # streaming transport is rejected while parsing.
+            assert isinstance(request_data, GraphQLRequestData)
+            return await self._create_streaming_response(
+                request=request,
+                result=result,
+                protocol=request_data.protocol,
+                sub_response=sub_response,
+            )
+        if isinstance(result, GraphQLIncrementalExecutionResults):
+            multipart_transport = self.multipart_transport_class()
+
+            async def data() -> AsyncGenerator[object, None]:
+                all_pending: list[Any] = []
+                response, all_pending = await self._process_stream_result(
+                    request, result.initial_result, all_pending
+                )
+
+                yield response
+
+                async for value in result.subsequent_results:
+                    response, all_pending = await self._process_stream_result(
+                        request, value, all_pending
+                    )
+                    yield response
+
+            return await self.create_streaming_response(
+                request,
+                multipart_transport.stream(data, self.encode_json_string),
+                sub_response,
+                headers=multipart_transport.headers,
+            )
+
+        response_data: GraphQLHTTPResponse | list[GraphQLHTTPResponse]
+
+        if isinstance(result, list):
+            response_data = []
+            for execution_result in result:
+                processed_result = await self.process_result(
+                    request=request, result=execution_result
+                )
+                if execution_result.errors:
+                    self._handle_errors(execution_result.errors, processed_result)
+                response_data.append(processed_result)
+        else:
+            response_data = await self.process_result(request=request, result=result)
+
+            if result.errors:
+                self._handle_errors(result.errors, response_data)
+
+        return self.create_response(
+            response_data=response_data, sub_response=sub_response
+        )
+
+    def encode_json_string(self, data: object) -> str:
+        encoded_data = self.encode_json(data)
+
+        if isinstance(encoded_data, bytes):
+            return encoded_data.decode()
+
+        return encoded_data
+
+    async def _create_streaming_response(
+        self,
+        request: Request,
+        result: SubscriptionExecutionResult,
+        protocol: GraphQLRequestProtocol,
+        sub_response: SubResponse,
+    ) -> Response:
+        transport = self._get_stream_transport(protocol)
+        if transport is None:
+            raise RuntimeError(f"No HTTP stream transport configured for {protocol}")
+
+        return await self.create_streaming_response(
+            request,
+            self._stream_result(request, result, transport),
+            sub_response,
+            headers=transport.headers,
+        )
+
+    def _stream_result(
+        self,
+        request: Request,
+        result: SubscriptionExecutionResult,
+        transport: HTTPStreamTransport,
+    ) -> AsyncTextStream:
+        async def stream() -> AsyncGenerator[str, None]:
+            all_pending: list[Any] = []
+
+            async for value in result:
+                response, all_pending = await self._process_stream_result(
+                    request, value, all_pending
+                )
+                yield transport.encode_next(response, self.encode_json_string)
+
+            yield transport.encode_complete()
+
+        return merge_stream_with_heartbeat(
+            stream,
+            lambda: transport.heartbeat_message(self.encode_json_string),
+            interval=transport.heartbeat_interval,
+            send_initial_heartbeat=transport.send_initial_heartbeat,
+        )
+
+    async def _process_stream_result(
+        self,
+        request: Request,
+        value: Any,
+        all_pending: list[Any],
+    ) -> tuple[GraphQLHTTPResponse, list[Any]]:
+        if isinstance(value, InitialIncrementalExecutionResult):
+            initial_response = await self.process_result(request, value)
+            initial_response["hasNext"] = value.has_next
+            initial_response["pending"] = [p.formatted for p in value.pending]
+            initial_response["extensions"] = value.extensions
+
+            if value.errors:
+                self._handle_errors(value.errors, initial_response)
+
+            return initial_response, list(value.pending)
+
+        if isinstance(value, SubsequentIncrementalExecutionResult):
+            subsequent_response: GraphQLHTTPResponse = {
+                "hasNext": value.has_next,
+                "extensions": value.extensions,
+            }
+
+            if value.pending:
+                subsequent_response["pending"] = [p.formatted for p in value.pending]
+
+            if value.completed:
+                subsequent_response["completed"] = [
+                    p.formatted for p in value.completed
+                ]
+
+            if value.incremental:
+                incremental = []
+                all_pending.extend(value.pending)
+
+                for incremental_value in value.incremental:
+                    pending_value = next(
+                        (p for p in all_pending if p.id == incremental_value.id),
+                        None,
+                    )
+
+                    assert pending_value
+
+                    incremental.append(
+                        {
+                            **incremental_value.formatted,
+                            "path": pending_value.path,
+                            "label": pending_value.label,
+                        }
+                    )
+
+                subsequent_response["incremental"] = incremental
+
+            return subsequent_response, all_pending
+
+        processed_result = await self.process_result(request, value)
+
+        if value.errors:
+            self._handle_errors(value.errors, processed_result)
+
+        return processed_result, all_pending
+
+    async def parse_multipart_subscriptions(
+        self, request: AsyncHTTPRequestAdapter
+    ) -> dict[str, str]:
+        if request.method == "GET":
+            return self.parse_query_params(request.query_params)
+
+        return self.parse_json(await request.get_body())
+
+    async def parse_http_body(
+        self, request: AsyncHTTPRequestAdapter
+    ) -> GraphQLRequestData | list[GraphQLRequestData]:
+        content_type, _ = parse_content_type(request.content_type or "")
+        transport = self._get_stream_transport_from_headers(request.headers)
+        protocol: GraphQLRequestProtocol = transport.protocol if transport else "http"
+
+        if request.method == "GET":
+            data = self.parse_query_params(request.query_params)
+        elif "application/json" in content_type:
+            data = self.parse_json(await request.get_body())
+        elif self.multipart_uploads_enabled and content_type == "multipart/form-data":
+            data = await self.parse_multipart(request)
+        else:
+            raise HTTPException(400, "Unsupported content type")
+
+        if isinstance(data, list):
+            self._validate_batch_request(data, protocol=protocol)
+            return [
+                GraphQLRequestData(
+                    query=item.get("query"),
+                    variables=item.get("variables"),
+                    operation_name=item.get("operationName"),
+                    extensions=item.get("extensions"),
+                    protocol=protocol,
+                )
+                for item in data
+            ]
+
+        query = data.get("query")
+        if not isinstance(query, (str, type(None))):
+            raise HTTPException(
+                400,
+                "The GraphQL operation's `query` must be a string or null, if provided.",
+            )
+
+        variables = data.get("variables")
+        if not isinstance(variables, (dict, type(None))):
+            raise HTTPException(
+                400,
+                "The GraphQL operation's `variables` must be an object or null, if provided.",
+            )
+
+        extensions = data.get("extensions")
+        if not isinstance(extensions, (dict, type(None))):
+            raise HTTPException(
+                400,
+                "The GraphQL operation's `extensions` must be an object or null, if provided.",
+            )
+
+        return GraphQLRequestData(
+            query=query,
+            variables=variables,
+            operation_name=data.get("operationName"),
+            extensions=extensions,
+            protocol=protocol,
+        )
+
+    async def process_result(
+        self, request: Request, result: ExecutionResult
+    ) -> GraphQLHTTPResponse:
+        return process_result(result)
+
+    async def on_ws_connect(
+        self, context: Context
+    ) -> UnsetType | dict[str, object] | None:
+        return UNSET
+
+
+__all__ = ["AsyncBaseHTTPView"]

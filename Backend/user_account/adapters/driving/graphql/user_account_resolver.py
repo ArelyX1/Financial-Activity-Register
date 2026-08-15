@@ -16,8 +16,6 @@ class UserAccount:
     username: str
     email: str
     hashed_password: str
-    wallet: str
-    phrase: str
     salt: str
     provider_id: str
     n_id_account_provider: int | None = None
@@ -71,7 +69,9 @@ class Query:
             return UserByDocument(
                 id=person.n_id_person,
                 name=person.c_name,
-                last_name=person.c_last_name,
+                last_name=" ".join(
+                    part for part in (person.c_paternal_surname, person.c_maternal_surname) if part
+                ),
                 identification_number=person.c_identification_number,
                 username=account.c_username if account else "",
                 email=account.c_email if account else "",
@@ -94,8 +94,6 @@ class Query:
                     username=u.c_username,
                     email=u.c_email,
                     hashed_password=u.c_hashed_password,
-                    wallet=u.c_wallet,
-                    phrase=u.c_phrase,
                     salt=u.c_salt,
                     provider_id=u.c_provider_id,
                     n_id_account_provider=u.n_id_account_provider,
@@ -119,8 +117,8 @@ class Mutation:
             person = await person_service.find_by_identification_number(input.identification_number)
             if not person:
                 raise ValueError(f"Person with identification number '{input.identification_number}' not found")
-            if not person.c_name or not person.c_last_name:
-                raise ValueError("Person data is incomplete: name and last name are required")
+            if not person.c_name:
+                raise ValueError("Person data is incomplete: name is required")
 
             repo = PostgresUserAccountRepository(session)
             service = UserAccountService(repo)
@@ -152,8 +150,6 @@ class Mutation:
                 username=created.c_username,
                 email=created.c_email,
                 hashed_password=created.c_hashed_password,
-                wallet=created.c_wallet,
-                phrase=created.c_phrase,
                 salt=created.c_salt,
                 provider_id=created.c_provider_id,
                 n_id_account_provider=created.n_id_account_provider,
@@ -164,7 +160,7 @@ class Mutation:
                 created_at=str(created.created_at) if created.created_at else None,
             )
 
-    @strawberry.mutation
+    # @strawberry.mutation  # API desactivada temporalmente
     async def update_user_status(self, token: str, n_id_user: str, b_is_active: bool) -> bool:
         await enforce_access(token, "update_user_status")
         async with AsyncSessionLocal() as session:

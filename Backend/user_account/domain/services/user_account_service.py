@@ -19,12 +19,13 @@ class UserAccountService(UserAccountInputPort):
         existing = await self._repo.find_by_email(data.c_email)
         if existing:
             raise ValueError(f"Email '{data.c_email}' is already registered")
-        enc_pwd, enc_phrase, salt, wallet = rs.register(password)
+        enc_pwd, salt = rs.register(password)
         data.c_hashed_password = enc_pwd.hex()
-        data.c_phrase = enc_phrase.hex()
         data.c_salt = salt
-        data.c_wallet = wallet
         return await self._repo.save(data)
 
     async def update_status(self, n_id_user: str, b_is_active: bool) -> None:
         await self._repo.update_status(n_id_user, b_is_active)
+
+    async def update_password(self, n_id_user: str, hashed_password: str, salt: str) -> None:
+        await self._repo.update_password(n_id_user, hashed_password, salt)

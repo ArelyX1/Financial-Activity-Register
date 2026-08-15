@@ -9,8 +9,6 @@ class UserAccount:
     c_username: str = ""
     c_email: str = ""
     c_hashed_password: str = ""
-    c_wallet: str = ""
-    c_phrase: str = ""
     c_salt: str = ""
     c_provider_id: str = ""
     n_id_account_provider: Optional[int] = None

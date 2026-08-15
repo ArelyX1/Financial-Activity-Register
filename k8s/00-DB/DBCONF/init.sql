@@ -118,9 +118,9 @@ CREATE TABLE public."S01ACCOUNT_PROVIDER" (
 -- =============================================================================
 CREATE TABLE public."S02PERSON" (
 	nidperson				UUID			PRIMARY KEY DEFAULT gen_random_uuid(),
-	cname					VARCHAR(50)		NOT NULL,
+	cname					VARCHAR(50),
 	cmiddlename				VARCHAR(50),
-	cmaternalsurname		VARCHAR(50)		NOT NULL,
+	cmaternalsurname		VARCHAR(50),
 	cpaternalsurname		VARCHAR(50),
 	nididentificationtype	INTEGER			NOT NULL	REFERENCES "S01IDENTIFICATION_TYPE"(nididentificationtype),
 	cididentificationnumber	VARCHAR(20)		NOT NULL,

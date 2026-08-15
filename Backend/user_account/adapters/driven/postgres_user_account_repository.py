@@ -16,14 +16,12 @@ class S02UserORM(Base):
     cUsername = Column("cusername", String(20), nullable=False)
     cEmail = Column("cemail", String(100), nullable=False)
     cHashedPassword = Column("chashedpassword", String(256), nullable=False)
-    cWallet = Column("cwallet", String(49), nullable=False)
-    cPhrase = Column("cphrase", String)
     cSalt = Column("csalt", String)
     cProviderId = Column("cproviderid", String)
     nIdAccountProvider = Column("nidaccountprovider", Integer)
     bEmailVerified = Column("bemailverified", Boolean)
     tLatestAccess = Column("tlatestaccess", DateTime)
-    tCreatedAt = Column("createdat", DateTime, server_default=text("NOW()"))
+    tCreatedAt = Column("tcreatedat", DateTime, server_default=text("NOW()"))
     cPhotoUrl = Column("cphotourl", String)
     bIsActive = Column("bisactive", Boolean)
 
@@ -43,8 +41,6 @@ class PostgresUserAccountRepository(UserAccountRepositoryPort):
             cUsername=data.c_username,
             cEmail=data.c_email,
             cHashedPassword=data.c_hashed_password,
-            cWallet=data.c_wallet,
-            cPhrase=data.c_phrase,
             cSalt=data.c_salt,
             cProviderId=data.c_provider_id,
             nIdAccountProvider=data.n_id_account_provider,
@@ -83,14 +79,23 @@ class PostgresUserAccountRepository(UserAccountRepositoryPort):
         await self._session.flush()
         await self._session.commit()
 
+    async def update_password(self, n_id_user: str, c_hashed_password: str, c_salt: str) -> None:
+        stmt = select(S02UserORM).where(S02UserORM.nIdUser == n_id_user)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        if not orm:
+            raise ValueError(f"User account with id '{n_id_user}' not found")
+        orm.cHashedPassword = c_hashed_password
+        orm.cSalt = c_salt
+        await self._session.flush()
+        await self._session.commit()
+
     def _to_entity(self, orm: S02UserORM) -> UserAccount:
         return UserAccount(
             n_id_user=str(orm.nIdUser) if orm.nIdUser else None,
             c_username=orm.cUsername,
             c_email=orm.cEmail,
             c_hashed_password=orm.cHashedPassword,
-            c_wallet=orm.cWallet,
-            c_phrase=orm.cPhrase or "",
             c_salt=orm.cSalt or "",
             c_provider_id=orm.cProviderId or "",
             n_id_account_provider=orm.nIdAccountProvider,

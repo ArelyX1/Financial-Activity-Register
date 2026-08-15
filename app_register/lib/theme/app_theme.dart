@@ -2,23 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppColors {
-  static const Color primary = Color(0xFF0D6B66);
-  static const Color secondary = Color(0xFF4A4A4A);
-  static const Color tertiary = Color(0xFFFF9800);
-  static const Color alternate = Color(0xFFF0F0F0);
-  static const Color primaryBackground = Color(0xFFFFF9F9);
-  static const Color secondaryBackground = Color(0xFFFFFFFF);
-  static const Color primaryText = Color(0xFF0F182A);
-  static const Color secondaryText = Color(0xFF8E8E8E);
-  static const Color accent1 = Color(0xFF0D6B66);
+  static const Color primary = Color(0xFFCFDC28);
+  static const Color secondary = Color(0xFF12667F);
+  static const Color tertiary = Color(0xFFC65B5B);
+  static const Color alternate = Color(0xFFD0D0D0);
+  static const Color primaryBackground = Color(0xFFCFDC28);
+  static const Color secondaryBackground = Color(0xFFD0D0D0);
+  static const Color primaryText = Color(0xFF12667F);
+  static const Color secondaryText = Color(0xFF6B7A8A);
+  static const Color accent1 = Color(0xFF12667F);
   static const Color accent2 = Color(0xFF4A4A4A);
   static const Color accent3 = Color(0xFF7A9C9C);
   static const Color accent4 = Color(0xFFADB5BD);
   static const Color success = Color(0xFF329B47);
   static const Color warning = Color(0xFFDAA520);
-  static const Color error = Color(0xFFD32F2F);
+  static const Color error = Color(0xFFC65B5B);
   static const Color info = Color(0xFF2680EB);
-  static const Color onPrimary = Color(0xFFFFFFFF);
+  static const Color onPrimary = Color(0xFF12667F);
   static const Color onSecondary = Color(0xFFFFFFFF);
 }
 
@@ -34,20 +34,20 @@ class AppTheme {
     useMaterial3: true,
     brightness: Brightness.light,
     colorScheme: const ColorScheme.light(
-      primary: Color(0xFF0D6B66),
-      secondary: Color(0xFF4A4A4A),
-      tertiary: Color(0xFFFF9800),
-      error: Color(0xFFD32F2F),
-      surface: Color(0xFFFFFFFF),
-      onPrimary: Color(0xFFFFFFFF),
+      primary: Color(0xFFCFDC28),
+      secondary: Color(0xFF12667F),
+      tertiary: Color(0xFFC65B5B),
+      error: Color(0xFFC65B5B),
+      surface: Color(0xFFD0D0D0),
+      onPrimary: Color(0xFF12667F),
       onSecondary: Color(0xFFFFFFFF),
       onError: Color(0xFFFFFFFF),
-      onSurface: Color(0xFF0F182A),
+      onSurface: Color(0xFF12667F),
     ),
-    scaffoldBackgroundColor: const Color(0xFFFFF9F9),
+    scaffoldBackgroundColor: const Color(0xFFCFDC28),
     fontFamily: 'Inter',
     appBarTheme: const AppBarTheme(
-      backgroundColor: Color(0xFF0D6B66),
+      backgroundColor: Color(0xFF12667F),
       foregroundColor: Color(0xFFFFFFFF),
       elevation: 2,
       centerTitle: false,
@@ -120,22 +120,24 @@ class AppThemeData {
 
   ThemeData get theme => Theme.of(context);
 
-  Color get primary => const Color(0xFF0D6B66);
-  Color get secondary => const Color(0xFF4A4A4A);
-  Color get tertiary => const Color(0xFFFF9800);
-  Color get alternate => const Color(0xFFF0F0F0);
-  Color get primaryBackground => const Color(0xFFFFF9F9);
-  Color get secondaryBackground => const Color(0xFFFFFFFF);
-  Color get primaryText => const Color(0xFF0F182A);
-  Color get secondaryText => const Color(0xFF8E8E8E);
-  Color get accent1 => const Color(0xFF0D6B66);
+  Color get primary => const Color(0xFFCFDC28);
+  Color get secondary => const Color(0xFF12667F);
+  Color get tertiary => const Color(0xFFC65B5B);
+  Color get alternate => const Color(0xFFD0D0D0);
+  Color get primaryBackground => const Color(0xFFCFDC28);
+  Color get secondaryBackground => const Color(0xFFD0D0D0);
+  Color get primaryText => const Color(0xFF12667F);
+  Color get secondaryText => const Color(0xFF6B7A8A);
+  Color get accent1 => const Color(0xFF12667F);
   Color get accent2 => const Color(0xFF4A4A4A);
   Color get accent3 => const Color(0xFF7A9C9C);
   Color get accent4 => const Color(0xFFADB5BD);
   Color get success => const Color(0xFF329B47);
   Color get warning => const Color(0xFFDAA520);
-  Color get error => const Color(0xFFD32F2F);
+  Color get error => const Color(0xFFC65B5B);
   Color get info => const Color(0xFF2680EB);
+  Color get onPrimary => const Color(0xFF12667F);
+  Color get onSecondary => const Color(0xFFFFFFFF);
 
   TextStyle get displayLarge => GoogleFonts.getFont('Plus Jakarta Sans', fontWeight: FontWeight.w700, fontSize: 56, height: 1.1);
   TextStyle get displayMedium => GoogleFonts.getFont('Plus Jakarta Sans', fontWeight: FontWeight.w700, fontSize: 44, height: 1.15);

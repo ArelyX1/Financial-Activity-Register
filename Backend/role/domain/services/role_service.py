@@ -13,3 +13,27 @@ class RoleService(RoleInputPort):
 
     async def find_by_name(self, name: str) -> Optional[Role]:
         return await self._repo.find_by_name(name)
+
+    async def assign_permissions(self, role_id: int, permission_codes: List[str]) -> Role:
+        existing = await self._repo.find_by_id(role_id)
+        if not existing:
+            raise ValueError(f"Role with id '{role_id}' not found")
+        if not permission_codes:
+            raise ValueError("At least one permission is required")
+        return await self._repo.assign_permissions(role_id, permission_codes)
+
+    async def create(self, data: Role) -> Role:
+        name = data.c_name.strip()
+        if not name:
+            raise ValueError("Role name is required")
+        if len(name) > 50:
+            raise ValueError("Role name must be 50 characters or less")
+        category = (data.c_category or "").strip()
+        if not category:
+            raise ValueError("Role category is required")
+        existing = await self._repo.find_by_name(name)
+        if existing:
+            raise ValueError(f"Role '{name}' already exists")
+        data.c_name = name
+        data.c_category = category
+        return await self._repo.create(data)
