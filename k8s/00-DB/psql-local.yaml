@@ -6,8 +6,8 @@ metadata:
 spec:
   type: ClusterIP
   ports:
-    - port: 5433
-      targetPort: 5433
+    - port: 5432
+      targetPort: 5432
   selector:
     app: incasur-db
 ---
@@ -51,7 +51,7 @@ spec:
             - name: POSTGRES_PASSWORD
               value: "p3rr1p0p0"
           ports:
-            - containerPort: 5433
+            - containerPort: 5432
               name: postgres
           volumeMounts:
             - name: db-storage

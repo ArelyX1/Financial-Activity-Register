@@ -1,0 +1,42 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: incasur-api
+  namespace: "2023241041"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: incasur-api
+  template:
+    metadata:
+      labels:
+        app: incasur-api
+    spec:
+      containers:
+      - name: incasur-api
+        image: arelyxl/incasur-api:v1.0
+        ports:
+        - containerPort: 5000
+        env:
+        # Variables de conexión a la BD
+        - name: DATABASE_URL
+          value: "postgresql://perripopo:p3rr1p0p0@incasur-psql-service:5432/incasur"
+        - name: DB_HOST
+          value: "incasur-psql-service"
+        - name: DB_NAME
+          value: "incasur"
+        - name: DB_USER
+          value: "perripopo"
+        - name: DB_PASSWORD
+          value: "p3rr1p0p0"
+        - name: REDIS_URL
+          value: "redis://redis-service:6379/0"
+        volumeMounts:
+        - name: permission-fix
+          mountPath: "/app/auth/domain/services/permission_strategy.py"
+          subPath: "permission_strategy.py"
+      volumes:
+      - name: permission-fix
+        configMap:
+          name: permission-strategy-fix

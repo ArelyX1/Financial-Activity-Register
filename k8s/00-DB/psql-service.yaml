@@ -8,5 +8,5 @@ spec:
     app: incasur-db
   ports:
     - protocol: TCP
-      port: 5433      # Puerto que usa el servicio
-      targetPort: 5433 # Puerto que expone tu Pod
+      port: 5432      # Puerto que usa el servicio
+      targetPort: 5432 # Puerto que expone tu Pod (Timescale/Postgres por defecto)

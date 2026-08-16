@@ -1,0 +1,51 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloudflared-api-incasur
+  namespace: "2023241041"
+  labels:
+    app: cloudflare-tunnel-api-incasur
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: cloudflare-tunnel-api-incasur
+  template:
+    metadata:
+      labels:
+        app: cloudflare-tunnel-api-incasur
+    spec:
+      hostNetwork: true
+      dnsPolicy: Default
+      containers:
+      - name: cloudflared-api-incasur
+        image: cloudflare/cloudflared:latest
+        imagePullPolicy: Always
+        args:
+        - --config
+        - /etc/cloudflared/config.yml
+        - tunnel
+        - --no-autoupdate
+        - run
+        - --token
+        - eyJhIjoiYjk2ZjE2YTY0ZDc5OTJhN2E2OGJjMmRlYjIxNzc1MTUiLCJ0IjoiNmNhMWZlMGEtOGY2MC00NWVmLWEzNDAtYzBjNGNkMTQwYmEyIiwicyI6IlkyTTVOVE0xTmpRdFl6YzFZaTAwTkdVMExXRTNNekV0TVRVeU9HUTFaRGN3T0dFdyJ9
+        volumeMounts:
+        - mountPath: /etc/cloudflared/config.yml
+          name: tunnel-config
+          subPath: config.yml
+      volumes:
+      - name: tunnel-config
+        configMap:
+          name: cloudflare-tunnel-config
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloudflare-tunnel-config
+  namespace: "2023241041"
+data:
+  config.yml: |
+    ingress:
+      - hostname: apincasur.neravy.us
+        service: http://172.16.10.31:30077
+      - service: http_status:404
