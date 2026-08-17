@@ -1,0 +1,145 @@
+.layout {
+	min-height: 100dvh;
+	display: flex;
+	flex-direction: column;
+	background: #f5f7fa;
+}
+
+.main {
+	flex: 1;
+	padding: 80px 24px 24px;
+	overflow-y: auto;
+}
+
+/* ============ Charts ============ */
+
+.chartsGrid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 16px;
+	margin-bottom: 26px;
+}
+
+.chartCard {
+	background: #ffffff;
+	border: 1px solid var(--color-divider);
+	border-radius: var(--radius-lg);
+	padding: 18px;
+	display: flex;
+	flex-direction: column;
+	gap: 5px;
+}
+
+.chartLabel {
+	font-size: 13px;
+	color: var(--color-secondary-text);
+}
+
+.chartValue {
+	font-family: var(--font-display);
+	font-size: 28px;
+	font-weight: 700;
+	color: var(--color-primary-text);
+}
+
+.barTrack {
+	height: 8px;
+	background: #eef0f3;
+	border-radius: 999px;
+	overflow: hidden;
+	margin-top: 6px;
+}
+
+.barFill {
+	height: 100%;
+	border-radius: 999px;
+}
+
+.chartHint {
+	font-size: 11px;
+	color: var(--color-secondary-text);
+	opacity: 0.8;
+}
+
+/* ============ Donut ============ */
+
+.donutSection {
+	background: #ffffff;
+	border: 1px solid var(--color-divider);
+	border-radius: var(--radius-lg);
+	padding: 22px;
+}
+
+.sectionTitle {
+	font-size: 17px;
+	font-weight: 700;
+	color: var(--color-primary-text);
+	margin-bottom: 16px;
+}
+
+.donutRow {
+	display: flex;
+	align-items: center;
+	gap: 32px;
+}
+
+.donutWrapper {
+	position: relative;
+	width: 160px;
+	height: 160px;
+	flex-shrink: 0;
+}
+
+.donut {
+	width: 100%;
+	height: 100%;
+	transform: rotate(-90deg);
+}
+
+.donutCenter {
+	position: absolute;
+	inset: 0;
+	display: grid;
+	place-items: center;
+	font-family: var(--font-display);
+	font-size: 24px;
+	font-weight: 700;
+	color: var(--color-primary-text);
+}
+
+.donutLegend {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.legendItem {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	font-size: 14px;
+	color: var(--color-accent2);
+}
+
+.legendItem strong {
+	margin-left: auto;
+	color: var(--color-primary-text);
+}
+
+.legendDot {
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+	.main {
+		padding: 72px 16px 16px;
+	}
+
+	.donutRow {
+		flex-direction: column;
+		align-items: center;
+	}
+}

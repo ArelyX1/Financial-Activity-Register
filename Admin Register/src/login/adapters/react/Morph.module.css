@@ -1,0 +1,16 @@
+.field {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+}
+
+.tile {
+	position: absolute;
+	will-change: transform, filter, opacity;
+	backface-visibility: hidden;
+	image-rendering: auto;
+}
+
+.blur {
+	box-shadow: inset 0 0 12px rgba(255, 255, 255, 0.6);
+}

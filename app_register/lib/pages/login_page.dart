@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
 import '../components/text_field_widget.dart';
 import '../components/button_widget.dart';
 import '../components/checkbox_widget.dart';
+import '../models/app_state.dart';
+import '../services/api_service.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -21,6 +24,8 @@ class _LoginPageState extends State<LoginPage>
   final _userController = TextEditingController();
   final _passController = TextEditingController();
   bool _remember = false;
+  bool _loading = false;
+  String? _errorMessage;
 
   late final AnimationController _controller;
   late final Animation<double> _containerT;
@@ -115,6 +120,57 @@ class _LoginPageState extends State<LoginPage>
     );
   }
 
+  Future<void> _login() async {
+    final username = _userController.text.trim();
+    final password = _passController.text;
+    if (username.isEmpty || password.isEmpty) {
+      setState(() => _errorMessage = 'Ingrese su documento de identidad y contraseña');
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+    try {
+      final result = await ApiService.login(
+        identificationNumber: username,
+        password: password,
+      );
+      if (!mounted) return;
+      if (!result.success) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'Credenciales incorrectas';
+        });
+        return;
+      }
+      final canAccess = await ApiService.canAccessMobile(
+        token: result.accessToken ?? '',
+      );
+      if (!mounted) return;
+      if (!canAccess) {
+        setState(() {
+          _loading = false;
+          _errorMessage = 'No tiene acceso a la aplicación móvil';
+        });
+        return;
+      }
+      context.read<AppState>().setSession(
+            accessToken: result.accessToken ?? '',
+            refreshToken: result.refreshToken ?? '',
+            roles: result.roles,
+            permissions: result.permissions,
+          );
+      context.go('/dashboard');
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _errorMessage = e is ApiException ? e.message : 'Error de conexión';
+      });
+    }
+  }
+
   Widget _buildLogo() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(_logoBox * 0.16),
@@ -156,8 +212,8 @@ class _LoginPageState extends State<LoginPage>
                 const SizedBox(height: 28),
                 TextFieldWidget(
                   controller: _userController,
-                  label: 'Usuario',
-                  hint: 'Ingrese su usuario',
+                  label: 'Documento de Identidad',
+                  hint: 'Ingrese su identificación (ej. DNI, RUC)',
                   prefixIcon: Icons.person_outline,
                   fillColor: fieldFill,
                 ),
@@ -197,10 +253,37 @@ class _LoginPageState extends State<LoginPage>
                   ],
                 ),
                 const SizedBox(height: 24),
+                if (_errorMessage != null) ...[
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AppColors.error.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline,
+                            color: AppColors.error, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: theme.bodySmall.copyWith(
+                              color: AppColors.error,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                ],
                 ButtonWidget(
                   text: 'Iniciar Sesión',
                   icon: Icons.login,
-                  onPressed: () => context.go('/dashboard'),
+                  loading: _loading,
+                  onPressed: _loading ? null : _login,
                 ),
                 const SizedBox(height: 18),
                 Row(

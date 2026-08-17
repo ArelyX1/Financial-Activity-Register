@@ -9,6 +9,10 @@ class AppState extends ChangeNotifier {
   bool _newsNotifications = true;
   bool _rememberLogin = false;
   String _lastUsername = '';
+  String _accessToken = '';
+  String _refreshToken = '';
+  List<String> _roles = const [];
+  List<String> _permissions = const [];
 
   String get searchQuery => _searchQuery;
   bool get pushEnabled => _pushEnabled;
@@ -18,6 +22,11 @@ class AppState extends ChangeNotifier {
   bool get newsNotifications => _newsNotifications;
   bool get rememberLogin => _rememberLogin;
   String get lastUsername => _lastUsername;
+  String get accessToken => _accessToken;
+  String get refreshToken => _refreshToken;
+  List<String> get roles => _roles;
+  List<String> get permissions => _permissions;
+  bool get isLoggedIn => _accessToken.isNotEmpty;
 
   set searchQuery(String value) {
     _searchQuery = value;
@@ -56,6 +65,27 @@ class AppState extends ChangeNotifier {
 
   set lastUsername(String value) {
     _lastUsername = value;
+    notifyListeners();
+  }
+
+  void setSession({
+    required String accessToken,
+    required String refreshToken,
+    required List<String> roles,
+    required List<String> permissions,
+  }) {
+    _accessToken = accessToken;
+    _refreshToken = refreshToken;
+    _roles = roles;
+    _permissions = permissions;
+    notifyListeners();
+  }
+
+  void logout() {
+    _accessToken = '';
+    _refreshToken = '';
+    _roles = const [];
+    _permissions = const [];
     notifyListeners();
   }
 }

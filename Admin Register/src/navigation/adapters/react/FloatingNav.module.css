@@ -1,0 +1,159 @@
+/* ============ Floating nav ============ */
+
+.floatingNav {
+	position: fixed;
+	top: 0;
+	left: 0;
+	right: 0;
+	z-index: 300;
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 16px 24px;
+	pointer-events: none;
+}
+
+.floatingNav > * {
+	pointer-events: auto;
+}
+
+.navLeft {
+	display: flex;
+	align-items: center;
+	gap: 12px;
+}
+
+.iconBtn {
+	width: 42px;
+	height: 42px;
+	border-radius: var(--radius-md);
+	background: rgba(255, 255, 255, 0.85);
+	backdrop-filter: blur(8px);
+	display: grid;
+	place-items: center;
+	transition: background 0.15s ease;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.iconBtn:hover {
+	background: rgba(255, 255, 255, 1);
+}
+
+.iconBtnActive {
+	background: var(--color-secondary);
+}
+
+.iconBtnActive:hover {
+	background: #0e5468;
+}
+
+.grid4 {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 4px;
+	width: 16px;
+	height: 16px;
+}
+
+.grid4 span {
+	background: var(--color-primary-text);
+	border-radius: 2px;
+	transition: background 0.15s ease;
+}
+
+.iconBtnActive .grid4 span {
+	background: #ffffff;
+}
+
+.brandLink {
+	display: flex;
+	align-items: center;
+	text-decoration: none;
+}
+
+.brandLogo {
+	width: 40px;
+	height: 40px;
+	border-radius: 10px;
+	object-fit: cover;
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+}
+
+.profileBtn {
+	background: none;
+	border: none;
+	padding: 0;
+	cursor: pointer;
+}
+
+.profileImg {
+	width: 42px;
+	height: 42px;
+	border-radius: 50%;
+	object-fit: cover;
+	border: 2px solid rgba(255, 255, 255, 0.85);
+	box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+	transition: border-color 0.15s ease;
+}
+
+.profileImg:hover {
+	border-color: var(--color-primary);
+}
+
+/* ============ Folders overlay ============ */
+
+.foldersOverlay {
+	position: fixed;
+	inset: 0;
+	z-index: 250;
+	overflow: hidden;
+	background: rgba(0, 0, 0, 0.25);
+}
+
+.foldersStack {
+	position: absolute;
+	left: 2%;
+	right: 2%;
+	top: 0;
+	bottom: 0;
+	padding-top: 16px;
+}
+
+.folder {
+	position: absolute;
+	left: 0;
+	right: 0;
+	top: 0;
+	bottom: 0;
+	border-radius: 0 0 18px 18px;
+	box-shadow: 0 6px 30px rgba(0, 0, 0, 0.18);
+	transition: top 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+	cursor: default;
+}
+
+.folderTab {
+	position: absolute;
+	top: -36px;
+	left: 0;
+	width: 150px;
+	height: 36px;
+	border-radius: 12px 12px 0 0;
+	display: flex;
+	align-items: center;
+	padding: 0 16px;
+	font-size: 14px;
+	font-weight: 700;
+	color: #ffffff;
+	box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.12);
+}
+
+@media (max-width: 640px) {
+	.floatingNav {
+		padding: 12px 16px;
+	}
+
+	.foldersStack {
+		left: 1%;
+		right: 1%;
+	}
+}

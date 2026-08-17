@@ -1,0 +1,28 @@
+---
+import RequireAuth from '../auth/adapters/react/RequireAuth';
+import Menu from '../menu/adapters/react/Menu';
+import '../styles/global.css';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/plus-jakarta-sans';
+---
+
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Admin Register — Menú</title>
+		<style is:global>
+			body {
+				background: #f5f7fa;
+			}
+		</style>
+	</head>
+	<body>
+		<RequireAuth client:only="react">
+			<Menu client:only="react" />
+		</RequireAuth>
+	</body>
+</html>

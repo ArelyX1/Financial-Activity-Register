@@ -1,0 +1,84 @@
+/* ==========================================================================
+   Design tokens — palette heredada del tema Flutter de Incasur.
+   ========================================================================== */
+
+:root {
+	/* Colores */
+	--color-primary: #cfdc28;
+	--color-secondary: #12667f;
+	--color-tertiary: #c65b5b;
+	--color-alternate: #d0d0d0;
+
+	--color-primary-background: #cfdc28;
+	--color-secondary-background: #d0d0d0;
+
+	--color-primary-text: #12667f;
+	--color-secondary-text: #6b7a8a;
+
+	--color-accent1: #12667f;
+	--color-accent2: #4a4a4a;
+	--color-accent3: #7a9c9c;
+	--color-accent4: #adb5bd;
+
+	--color-success: #329b47;
+	--color-warning: #daa520;
+	--color-error: #c65b5b;
+	--color-info: #2680eb;
+
+	--color-on-primary: #12667f;
+	--color-on-secondary: #ffffff;
+
+	--color-surface: #ffffff;
+	--color-divider: #e1e1e1;
+
+	/* Tipografías */
+	--font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
+	--font-body: 'Inter Variable', system-ui, sans-serif;
+
+	/* Radios */
+	--radius-lg: 20px;
+	--radius-md: 12px;
+	--radius-sm: 8px;
+
+	/* Sombras */
+	--shadow-card: 0 24px 60px rgba(18, 102, 127, 0.35);
+}
+
+/* ==========================================================================
+   Reset
+   ========================================================================== */
+
+* {
+	margin: 0;
+	padding: 0;
+	box-sizing: border-box;
+}
+
+html {
+	color-scheme: light;
+}
+
+body {
+	font-family: var(--font-body);
+	font-size: 16px;
+	background: var(--color-primary-background);
+	color: var(--color-primary-text);
+	min-height: 100dvh;
+	overflow: hidden;
+}
+
+h1,
+h2,
+h3 {
+	font-family: var(--font-display);
+}
+
+button {
+	font: inherit;
+	border: none;
+	cursor: pointer;
+}
+
+input {
+	font: inherit;
+}
