@@ -256,7 +256,7 @@ export default function FloatingNav() {
 					>
 						<div className={styles.foldersStack}>
 							{FOLDERS.map((folder, i) => {
-								const offsetBase = (i + 1) * 52;
+								const offsetBase = (i + 1) * 36;
 								const pushDown =
 									hoveredFolder !== null && i < hoveredFolder ? 20 : 0;
 								const offset = offsetBase - pushDown;

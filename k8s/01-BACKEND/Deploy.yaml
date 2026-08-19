@@ -4,7 +4,7 @@ metadata:
   name: incasur-api
   namespace: "2023241041"
 spec:
-  replicas: 3
+  replicas: 1
   selector:
     matchLabels:
       app: incasur-api
