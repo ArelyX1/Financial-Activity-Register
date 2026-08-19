@@ -46,6 +46,15 @@ class AssignRolePermissionsInput:
     permission_codes: List[str] = strawberry.field(default_factory=list)
 
 
+@strawberry.input
+class CreatePermissionInput:
+    code: str
+    name: str
+    description: str | None = None
+    module: str | None = None
+    is_active: bool = True
+
+
 @strawberry.type
 class Mutation:
     @strawberry.mutation
@@ -112,6 +121,30 @@ class Mutation:
                     )
                     for p in updated.permissions
                 ],
+            )
+
+    @strawberry.mutation
+    async def create_permission(self, info: Info, token: str, input: CreatePermissionInput) -> Permission:
+        await enforce_access(token, "create_permission")
+        async with AsyncSessionLocal() as session:
+            repo = PostgresRoleRepository(session)
+            service = RoleService(repo)
+            entity = PermissionEntity(
+                c_code=input.code,
+                c_name=input.name,
+                c_description=input.description,
+                c_module=input.module,
+                b_is_active=input.is_active,
+            )
+            created = await service.create_permission(entity)
+            return Permission(
+                id=created.n_id_permission,
+                code=created.c_code,
+                name=created.c_name,
+                description=created.c_description,
+                module=created.c_module,
+                is_active=created.b_is_active,
+                created_at=str(created.t_created_at) if created.t_created_at else None,
             )
 
 

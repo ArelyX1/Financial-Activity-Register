@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from role.domain.entities.role import Role
+from role.domain.entities.role import Role, Permission
 
 
 class RoleRepositoryPort(ABC):
@@ -18,3 +18,9 @@ class RoleRepositoryPort(ABC):
 
     @abstractmethod
     async def find_by_id(self, role_id: int) -> Optional[Role]: ...
+
+    @abstractmethod
+    async def create_permission(self, data: Permission) -> Permission: ...
+
+    @abstractmethod
+    async def find_permission_by_code(self, code: str) -> Optional[Permission]: ...

@@ -142,6 +142,43 @@ class PostgresRoleRepository(RoleRepositoryPort):
         orm = result.unique().scalar_one_or_none()
         return self._to_entity(orm) if orm else None
 
+    async def create_permission(self, data: Permission) -> Permission:
+        orm = S02PermissionORM(
+            cCode=data.c_code,
+            cName=data.c_name,
+            cDescription=data.c_description,
+            cModule=data.c_module,
+            bIsActive=data.b_is_active,
+        )
+        self._session.add(orm)
+        await self._session.commit()
+        await self._session.refresh(orm)
+        return Permission(
+            n_id_permission=orm.nIdPermission,
+            c_code=orm.cCode,
+            c_name=orm.cName,
+            c_description=orm.cDescription,
+            c_module=orm.cModule,
+            b_is_active=orm.bIsActive,
+            t_created_at=orm.tCreatedAt,
+        )
+
+    async def find_permission_by_code(self, code: str) -> Optional[Permission]:
+        stmt = select(S02PermissionORM).where(S02PermissionORM.cCode == code)
+        result = await self._session.execute(stmt)
+        orm = result.scalar_one_or_none()
+        if not orm:
+            return None
+        return Permission(
+            n_id_permission=orm.nIdPermission,
+            c_code=orm.cCode,
+            c_name=orm.cName,
+            c_description=orm.cDescription,
+            c_module=orm.cModule,
+            b_is_active=orm.bIsActive,
+            t_created_at=orm.tCreatedAt,
+        )
+
     def _to_entity(self, orm: S02RoleORM) -> Role:
         return Role(
             n_id_role=orm.nIdRole,

@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from role.domain.entities.role import Role
+from role.domain.entities.role import Role, Permission
 
 
 class RoleInputPort(ABC):
@@ -12,3 +12,6 @@ class RoleInputPort(ABC):
 
     @abstractmethod
     async def create(self, data: Role) -> Role: ...
+
+    @abstractmethod
+    async def create_permission(self, data: Permission) -> Permission: ...

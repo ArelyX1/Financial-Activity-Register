@@ -1,7 +1,7 @@
 from typing import List, Optional
 from role.ports.driving.role_input_port import RoleInputPort
 from role.ports.driven.role_repository_port import RoleRepositoryPort
-from role.domain.entities.role import Role
+from role.domain.entities.role import Role, Permission
 
 
 class RoleService(RoleInputPort):
@@ -37,3 +37,21 @@ class RoleService(RoleInputPort):
         data.c_name = name
         data.c_category = category
         return await self._repo.create(data)
+
+    async def create_permission(self, data: Permission) -> Permission:
+        code = (data.c_code or "").strip()
+        if not code:
+            raise ValueError("Permission code is required")
+        if len(code) > 50:
+            raise ValueError("Permission code must be 50 characters or less")
+        name = (data.c_name or "").strip()
+        if not name:
+            raise ValueError("Permission name is required")
+        if len(name) > 100:
+            raise ValueError("Permission name must be 100 characters or less")
+        existing = await self._repo.find_permission_by_code(code)
+        if existing:
+            raise ValueError(f"Permission with code '{code}' already exists")
+        data.c_code = code
+        data.c_name = name
+        return await self._repo.create_permission(data)
