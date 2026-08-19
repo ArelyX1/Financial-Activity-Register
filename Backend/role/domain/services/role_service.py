@@ -55,3 +55,6 @@ class RoleService(RoleInputPort):
         data.c_code = code
         data.c_name = name
         return await self._repo.create_permission(data)
+
+    async def get_all_permissions(self) -> List[Permission]:
+        return await self._repo.find_all_permissions()

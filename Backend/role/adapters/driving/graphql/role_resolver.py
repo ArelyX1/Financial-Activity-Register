@@ -180,3 +180,22 @@ class Query:
                 )
                 for r in items
             ]
+
+    @strawberry.field
+    async def query_permissions(self) -> List[Permission]:
+        async with AsyncSessionLocal() as session:
+            repo = PostgresRoleRepository(session)
+            service = RoleService(repo)
+            items = await service.get_all_permissions()
+            return [
+                Permission(
+                    id=p.n_id_permission,
+                    code=p.c_code,
+                    name=p.c_name,
+                    description=p.c_description,
+                    module=p.c_module,
+                    is_active=p.b_is_active,
+                    created_at=str(p.t_created_at) if p.t_created_at else None,
+                )
+                for p in items
+            ]

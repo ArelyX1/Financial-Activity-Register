@@ -21,3 +21,4 @@ p, , deactivate_participant_program
 p, , activate_participant_program
 p, , create_workshop
 p, , update_workshop_status
+p, PER-C, create_permission

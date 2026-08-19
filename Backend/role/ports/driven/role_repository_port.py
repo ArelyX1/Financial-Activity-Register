@@ -24,3 +24,6 @@ class RoleRepositoryPort(ABC):
 
     @abstractmethod
     async def find_permission_by_code(self, code: str) -> Optional[Permission]: ...
+
+    @abstractmethod
+    async def find_all_permissions(self) -> List[Permission]: ...

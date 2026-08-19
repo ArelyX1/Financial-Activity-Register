@@ -179,6 +179,23 @@ class PostgresRoleRepository(RoleRepositoryPort):
             t_created_at=orm.tCreatedAt,
         )
 
+    async def find_all_permissions(self) -> List[Permission]:
+        stmt = select(S02PermissionORM).order_by(S02PermissionORM.cModule, S02PermissionORM.cCode)
+        result = await self._session.execute(stmt)
+        orm_perms = result.scalars().all()
+        return [
+            Permission(
+                n_id_permission=orm.nIdPermission,
+                c_code=orm.cCode,
+                c_name=orm.cName,
+                c_description=orm.cDescription,
+                c_module=orm.cModule,
+                b_is_active=orm.bIsActive,
+                t_created_at=orm.tCreatedAt,
+            )
+            for orm in orm_perms
+        ]
+
     def _to_entity(self, orm: S02RoleORM) -> Role:
         return Role(
             n_id_role=orm.nIdRole,

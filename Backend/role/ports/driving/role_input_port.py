@@ -15,3 +15,6 @@ class RoleInputPort(ABC):
 
     @abstractmethod
     async def create_permission(self, data: Permission) -> Permission: ...
+
+    @abstractmethod
+    async def get_all_permissions(self) -> List[Permission]: ...
