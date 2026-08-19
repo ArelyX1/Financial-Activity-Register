@@ -1,11 +1,12 @@
 import type { AuthenticationPort, LoginCredentials, LoginResult } from '../domain/login';
-import { graphql, canAccessAdmin } from '../../auth/api';
-import { saveSession } from '../../auth/session';
+import { graphql, canAccessAdmin, fetchCurrentUser } from '../../auth/api';
+import { saveSession, saveUser } from '../../auth/session';
 
 interface LoginPayload {
 	success: boolean;
 	access_token?: string | null;
 	refresh_token?: string | null;
+	access_token_expires_at?: string | null;
 	roles?: string[];
 }
 
@@ -21,6 +22,7 @@ export class GraphQLLoginService implements AuthenticationPort {
 						success
 						access_token
 						refresh_token
+						access_token_expires_at
 						roles
 					}
 				}`,
@@ -40,7 +42,24 @@ export class GraphQLLoginService implements AuthenticationPort {
 				return { ok: false, error: 'No tiene acceso al panel de administración.' };
 			}
 
-			saveSession(login.login.access_token, login.login.refresh_token ?? undefined);
+			saveSession(
+				login.login.access_token,
+				login.login.refresh_token ?? undefined,
+				login.login.access_token_expires_at ?? undefined,
+			);
+
+			// Fetch user data in background (non-blocking)
+			fetchCurrentUser(credentials.identificationNumber)
+				.then((userData) => {
+					if (userData) {
+						saveUser({
+							identificationNumber: credentials.identificationNumber,
+							name: userData.name,
+							photoUrl: userData.photoUrl,
+						});
+					}
+				})
+				.catch(() => {});
 
 			return {
 				ok: true,

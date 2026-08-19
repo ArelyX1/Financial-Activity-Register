@@ -1,0 +1,34 @@
+---
+import RequireAuth from '../../auth/adapters/react/RequireAuth';
+import FloatingNav from '../../navigation/adapters/react/FloatingNav';
+import PageReveal from '../../ui/adapters/react/PageReveal';
+import '../../styles/global.css';
+import '@fontsource-variable/inter';
+import '@fontsource-variable/plus-jakarta-sans';
+---
+
+<html lang="es">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+		<link rel="icon" href="/favicon.ico" />
+		<meta name="viewport" content="width=device-width" />
+		<meta name="generator" content={Astro.generator} />
+		<title>Admin Register — Clientes</title>
+		<style is:global>
+			body {
+				background: #f5f7fa;
+			}
+		</style>
+	</head>
+	<body>
+		<RequireAuth client:only="react">
+			<PageReveal client:only="react">
+				<FloatingNav client:only="react" />
+				<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--font-body);color:var(--color-primary-text);">
+					<h1>Clientes</h1>
+				</div>
+			</PageReveal>
+		</RequireAuth>
+	</body>
+</html>

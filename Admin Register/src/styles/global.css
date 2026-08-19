@@ -2,6 +2,8 @@
    Design tokens — palette heredada del tema Flutter de Incasur.
    ========================================================================== */
 
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700;800&display=swap');
+
 :root {
 	/* Colores */
 	--color-primary: #cfdc28;
@@ -32,8 +34,8 @@
 	--color-divider: #e1e1e1;
 
 	/* Tipografías */
-	--font-display: 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
-	--font-body: 'Inter Variable', system-ui, sans-serif;
+	--font-display: 'DM Sans', 'Plus Jakarta Sans Variable', 'Inter Variable', system-ui, sans-serif;
+	--font-body: 'DM Sans', 'Inter Variable', system-ui, sans-serif;
 
 	/* Radios */
 	--radius-lg: 20px;

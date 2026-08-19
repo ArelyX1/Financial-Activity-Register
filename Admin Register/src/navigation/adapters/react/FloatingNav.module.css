@@ -100,51 +100,200 @@
 	border-color: var(--color-primary);
 }
 
+.profileWrap {
+	position: relative;
+}
+
+.profileDropdown {
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	background: #ffffff;
+	border-radius: 12px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
+	min-width: 200px;
+	overflow: hidden;
+	z-index: 310;
+}
+
+.profileInfo {
+	padding: 14px 16px;
+	border-bottom: 1px solid var(--color-divider);
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.profileInfo strong {
+	font-size: 14px;
+	color: var(--color-primary-text);
+}
+
+.profileInfo span {
+	font-size: 12px;
+	color: var(--color-secondary-text);
+}
+
+.logoutBtn {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
+	padding: 12px 16px;
+	background: none;
+	border: none;
+	font-size: 14px;
+	font-weight: 600;
+	color: var(--color-primary-text);
+	cursor: pointer;
+	transition: background 0.15s ease, color 0.15s ease;
+	text-align: left;
+}
+
+.logoutBtn:hover {
+	background: #fde8e8;
+	color: #c65b5b;
+}
+
 /* ============ Folders overlay ============ */
 
 .foldersOverlay {
 	position: fixed;
 	inset: 0;
-	z-index: 250;
+	top: 74px;
+	z-index: 400;
 	overflow: hidden;
 	background: rgba(0, 0, 0, 0.25);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding-top: 300px;
 }
 
 .foldersStack {
-	position: absolute;
-	left: 2%;
-	right: 2%;
-	top: 0;
-	bottom: 0;
-	padding-top: 16px;
+	position: relative;
+	width: 90vw;
+	max-width: 950px;
+	height: 50vh;
 }
 
 .folder {
 	position: absolute;
 	left: 0;
 	right: 0;
-	top: 0;
 	bottom: 0;
-	border-radius: 0 0 18px 18px;
-	box-shadow: 0 6px 30px rgba(0, 0, 0, 0.18);
-	transition: top 0.35s cubic-bezier(0.22, 1, 0.36, 1);
-	cursor: default;
+	height: 100%;
+	border-radius: 6px 6px 14px 14px;
+	box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+	transition: bottom 0.35s cubic-bezier(0.22, 1, 0.36, 1), transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+	cursor: pointer;
+	text-decoration: none;
+	display: block;
+}
+
+.folderFloated {
+	z-index: 9999;
+}
+
+.folderRotated {
+	transform: rotate(-90deg);
+	transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.folderMovedUp {
+	transform: rotate(-90deg) translateY(-400px);
+}
+
+.folderBook {
+	position: absolute;
+	inset: 0;
+	perspective: 800px;
+	z-index: 5;
+	pointer-events: none;
+}
+
+.folderCover {
+	position: absolute;
+	inset: 0;
+	border-radius: 6px 6px 14px 14px;
+	box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.15);
+	transform-origin: bottom center;
 }
 
 .folderTab {
 	position: absolute;
-	top: -36px;
-	left: 0;
-	width: 150px;
-	height: 36px;
-	border-radius: 12px 12px 0 0;
+	top: -44px;
+	left: 40px;
+	width: 300px;
+	height: 44px;
+	border-radius: 14px 14px 0 0;
 	display: flex;
 	align-items: center;
-	padding: 0 16px;
-	font-size: 14px;
-	font-weight: 700;
+	justify-content: center;
+	padding: 0;
+	font-family: 'DM Sans', sans-serif;
+	font-size: 20px;
+	font-weight: 800;
+	letter-spacing: 3px;
+	text-transform: uppercase;
 	color: #ffffff;
-	box-shadow: 0 -4px 14px rgba(0, 0, 0, 0.12);
+	box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.1);
+	overflow: visible;
+}
+
+.folderTab::before {
+	content: '';
+	position: absolute;
+	bottom: -10px;
+	left: -12px;
+	width: 24px;
+	height: 14px;
+	background: inherit;
+	clip-path: polygon(100% 0, 100% 100%, 0 100%);
+}
+
+.subRow {
+	position: absolute;
+	top: 0;
+	left: 0;
+	right: 0;
+	display: flex;
+	gap: 12px;
+	padding: 20px 40px;
+	z-index: 1;
+}
+
+.subBtn {
+	padding: 18px 16px;
+	width: 110px;
+	text-align: center;
+	font-family: 'DM Sans', sans-serif;
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.5px;
+	text-transform: uppercase;
+	color: #333;
+	text-decoration: none;
+	cursor: pointer;
+	background: #fffde7;
+	box-shadow:
+		2px 3px 8px rgba(0, 0, 0, 0.18),
+		inset 0 -3px 6px rgba(0, 0, 0, 0.06);
+	border: none;
+	border-radius: 2px;
+	clip-path: polygon(0 0, 100% 0, 100% 88%, 50% 100%, 0 88%);
+	transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.subBtn:hover {
+	transform: translateY(-3px);
+	box-shadow:
+		2px 6px 14px rgba(0, 0, 0, 0.25),
+		inset 0 -3px 6px rgba(0, 0, 0, 0.06);
+}
+
+.subRowRotated {
+	transform: rotate(90deg);
 }
 
 @media (max-width: 640px) {
@@ -153,7 +302,181 @@
 	}
 
 	.foldersStack {
-		left: 1%;
-		right: 1%;
+		width: 98vw;
 	}
+
+	.folderTab {
+		width: 220px;
+		height: 38px;
+		font-size: 18px;
+		letter-spacing: 3px;
+		top: -38px;
+		left: 24px;
+	}
+
+	.subRow {
+		gap: 8px;
+		padding: 16px 24px;
+	}
+
+	.subBtn {
+		padding: 8px 16px;
+		font-size: 11px;
+		letter-spacing: 0.5px;
+	}
+}
+
+.folderButtons {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%) rotate(90deg);
+	display: flex;
+	gap: 16px;
+	z-index: 1;
+}
+
+.folderBack {
+	position: absolute;
+	top: 12px;
+	right: 12px;
+	transform: rotate(90deg);
+	background: rgba(255, 255, 255, 0.2);
+	border: 2px solid rgba(255, 255, 255, 0.35);
+	border-radius: 4px;
+	width: 44px;
+	height: 44px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	color: white;
+	transition: background 0.15s ease, border-color 0.15s ease;
+	z-index: 2;
+}
+
+.folderBack:hover {
+	background: rgba(255, 255, 255, 0.4);
+	border-color: rgba(255, 255, 255, 0.6);
+}
+
+.folderPanel {
+	position: fixed;
+	top: 50%;
+	left: 50%;
+	width: 340px;
+	min-height: 200px;
+	background: #fdf8e8;
+	background-image:
+		repeating-linear-gradient(
+			transparent,
+			transparent 27px,
+			#e8e4d4 27px,
+			#e8e4d4 28px
+		);
+	background-position: 0 32px;
+	border-radius: 2px 12px 12px 2px;
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+	z-index: 10002;
+	cursor: grab;
+	user-select: none;
+	overflow: hidden;
+	border-left: 3px solid #c65b5b;
+}
+
+.folderPanel:active {
+	cursor: grabbing;
+}
+
+.folderPanelHeader {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 14px 18px;
+	border-bottom: 2px solid #e8e4d4;
+	background: linear-gradient(135deg, #1a7a5c 0%, #145f48 100%);
+	position: relative;
+}
+
+.folderPanelHeader::before {
+	content: '';
+	position: absolute;
+	left: 16px;
+	top: 50%;
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.3);
+	box-shadow: 20px 0 0 rgba(255, 255, 255, 0.3);
+}
+
+.folderPanelLabel {
+	font-family: 'DM Sans', sans-serif;
+	font-size: 14px;
+	font-weight: 700;
+	color: #ffffff;
+	text-transform: uppercase;
+	letter-spacing: 1px;
+	text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.folderPanelClose {
+	background: rgba(255, 255, 255, 0.2);
+	border: none;
+	cursor: pointer;
+	color: #ffffff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 6px;
+	border-radius: 4px;
+	transition: color 0.15s ease, background 0.15s ease;
+}
+
+.folderPanelClose:hover {
+	color: #ffcccc;
+	background: rgba(255, 255, 255, 0.3);
+}
+
+.folderPanelBody {
+	padding: 24px 18px 24px 28px;
+	font-family: 'DM Sans', sans-serif;
+	font-size: 14px;
+	color: #666;
+	min-height: 120px;
+}
+
+.subBtnActive {
+	background: #e8f5e9 !important;
+	box-shadow:
+		2px 3px 8px rgba(0, 0, 0, 0.18),
+		inset 0 -3px 6px rgba(0, 0, 0, 0.06),
+		inset 0 0 0 2px #1a7a5c !important;
+}
+
+.folderPanelLinks {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+}
+
+.subPanelLink {
+	font-family: 'DM Sans', sans-serif;
+	font-size: 14px;
+	font-weight: 600;
+	color: #2a6496;
+	text-decoration: none;
+	cursor: pointer;
+	padding: 8px 12px;
+	border-radius: 4px;
+	border-left: 2px solid transparent;
+	transition: background 0.15s ease;
+	display: block;
+	background: none;
+}
+
+.subPanelLink:hover {
+	background: rgba(26, 122, 92, 0.06);
+	border-left-color: #1a7a5c;
+	text-decoration: underline;
 }

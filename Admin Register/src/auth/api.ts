@@ -3,6 +3,8 @@
  * La URL se lee del .env (PUBLIC_API_URL) en build time.
  */
 
+import { getRefreshToken, saveSession, clearSession } from './session';
+
 const API_URL: string | undefined = import.meta.env.PUBLIC_API_URL;
 
 interface GraphQLError {
@@ -41,4 +43,77 @@ export async function canAccessAdmin(token: string): Promise<boolean> {
 		{ token }
 	);
 	return data.go_admin_page;
+}
+
+/** Refresca el par de tokens usando el refresh_token. */
+export async function refreshAccessToken(): Promise<boolean> {
+	const refreshToken = getRefreshToken();
+	if (!refreshToken) return false;
+
+	try {
+		const data = await graphql<{
+			refresh_token: {
+				success: boolean;
+				access_token: string | null;
+				refresh_token: string | null;
+				access_token_expires_at: string | null;
+			};
+		}>(
+			`mutation RefreshToken($refreshToken: String!) {
+				refresh_token(refresh_token: $refreshToken) {
+					success
+					access_token
+					refresh_token
+					access_token_expires_at
+				}
+			}`,
+			{ refreshToken }
+		);
+
+		const payload = data.refresh_token;
+		if (!payload.success || !payload.access_token) {
+			clearSession();
+			return false;
+		}
+
+		saveSession(
+			payload.access_token,
+			payload.refresh_token ?? undefined,
+			payload.access_token_expires_at ?? undefined,
+		);
+		return true;
+	} catch {
+		clearSession();
+		return false;
+	}
+}
+
+/** Obtiene los datos del usuario autenticado (nombre, foto). */
+export async function fetchCurrentUser(
+	identificationNumber: string,
+): Promise<{ name: string; photoUrl: string } | null> {
+	try {
+		const data = await graphql<{
+			person: {
+				name: string | null;
+				photo_url: string | null;
+			} | null;
+		}>(
+			`query GetPerson($id: String!) {
+				person(identification_number: $id) {
+					name
+					photo_url
+				}
+			}`,
+			{ id: identificationNumber }
+		);
+
+		if (!data.person) return null;
+		return {
+			name: data.person.name ?? '',
+			photoUrl: data.person.photo_url ?? '',
+		};
+	} catch {
+		return null;
+	}
 }

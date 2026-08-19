@@ -1,11 +1,12 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { getAccessToken, clearSession } from '../../session';
-import { canAccessAdmin } from '../../api';
+import { getAccessToken, isTokenExpiringSoon, clearSession } from '../../session';
+import { canAccessAdmin, refreshAccessToken } from '../../api';
 
 /**
  * Guard — protege una ruta verificando el token contra el backend.
+ * Si el token está por expirar, lo refresca automáticamente.
  * Si el usuario no está autenticado o no tiene permiso de admin (ACC-A),
- * redirige a /login y limpia la sesión.
+ * redirige a / y limpia la sesión.
  */
 
 type AuthState = 'checking' | 'allowed' | 'denied';
@@ -17,10 +18,25 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
 		let cancelled = false;
 
 		async function verify() {
-			const token = getAccessToken();
+			let token = getAccessToken();
 			if (!token) {
 				if (!cancelled) setState('denied');
 				return;
+			}
+
+			// Auto-refresh if token is about to expire (within 60s)
+			if (isTokenExpiringSoon(60_000)) {
+				const refreshed = await refreshAccessToken();
+				if (cancelled) return;
+				if (!refreshed) {
+					setState('denied');
+					return;
+				}
+				token = getAccessToken();
+				if (!token) {
+					setState('denied');
+					return;
+				}
 			}
 
 			try {

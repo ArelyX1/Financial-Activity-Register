@@ -5,8 +5,12 @@ import react from '@astrojs/react';
 // https://astro.build/config
 export default defineConfig({
   integrations: [react()],
+  server: {
+    host: '0.0.0.0',
+  },
   vite: {
     server: {
+      allowedHosts: 'all',
       watch: {
         usePolling: true,
       },
