@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useDragControls } from 'motion/react';
 import { clearSession, getUser, saveUser, getAccessToken, getRefreshToken, type SessionUser } from '../../../auth/session';
 import { fetchCurrentUser, graphql } from '../../../auth/api';
+import { AssignPermissionsProvider, PermissionsPanel, RolesPanel, AssignmentPanel } from '../../../sistema/adapters/react/AssignPermissions';
+import { AddRolePanel } from '../../../sistema/adapters/react/AddRole';
 import styles from './FloatingNav.module.css';
 
 const FOLDERS = [
@@ -103,6 +105,7 @@ export default function FloatingNav() {
 			setPersonalExiting(false);
 			setPersonalButtonsVisible(false);
 			setOpenPanel(null);
+			setOpenSubPanel(null);
 		}
 	}, [expandedPersonal]);
 
@@ -270,6 +273,8 @@ export default function FloatingNav() {
 										style={{
 											zIndex: isPersonal && expandedPersonal ? 9999 : FOLDERS.length - i,
 											background: folder.color,
+											pointerEvents: expandedPersonal && !isPersonal ? 'none' : 'auto',
+											opacity: expandedPersonal && !isPersonal ? 0.3 : undefined,
 										}}
 										initial={{ opacity: 0, bottom: offsetBase + 60 }}
 										animate={{ opacity: 1, bottom: offset }}
@@ -341,15 +346,24 @@ export default function FloatingNav() {
 								</FolderPanel>
 							)}
 						</AnimatePresence>
-						<AnimatePresence>
-							{openSubPanel && (
-								<FolderPanel
-									key={openSubPanel}
-									label={openSubPanel}
-									onClose={() => setOpenSubPanel(null)}
-								/>
-							)}
-						</AnimatePresence>
+						{openSubPanel === 'Agregar Roles' && (
+							<FolderPanel key="agregar-role" label="Agregar Role" onClose={() => setOpenSubPanel(null)} panelId="agregarRole">
+								<AddRolePanel />
+							</FolderPanel>
+						)}
+						{openSubPanel === 'Asignar Permisos a un Role' && (
+							<AssignPermissionsProvider>
+								<FolderPanel key="permisos" label="Todos los Permisos" onClose={() => setOpenSubPanel(null)} panelId="permisos">
+									<PermissionsPanel />
+								</FolderPanel>
+								<FolderPanel key="roles" label="Todos los Roles" onClose={() => setOpenSubPanel(null)} panelId="roles">
+									<RolesPanel />
+								</FolderPanel>
+								<FolderPanel key="asignar" label="Asignar Permisos a un Rol" onClose={() => setOpenSubPanel(null)} panelId="asignar">
+									<AssignmentPanel />
+								</FolderPanel>
+							</AssignPermissionsProvider>
+						)}
 					</motion.div>
 				)}
 			</AnimatePresence>
@@ -365,30 +379,47 @@ interface FolderPanelProps {
 	label: string;
 	onClose: () => void;
 	children?: React.ReactNode;
+	panelId?: string;
 }
 
-function FolderPanel({ label, onClose, children }: FolderPanelProps) {
+const PANEL_OFFSETS: Record<string, { x: number; y: number }> = {
+	permisos: { x: -280, y: -60 },
+	roles: { x: 20, y: -60 },
+	asignar: { x: -130, y: 120 },
+	agregarRole: { x: 60, y: 40 },
+};
+
+function FolderPanel({ label, onClose, children, panelId }: FolderPanelProps) {
+	const dragControls = useDragControls();
+	const draggable = Boolean(panelId);
 	const pos = useMemo(() => {
+		const offset = panelId ? PANEL_OFFSETS[panelId] : null;
+		if (offset) return offset;
 		const spread = 180;
 		return {
 			x: -170 + (Math.random() - 0.5) * spread,
 			y: -100 + (Math.random() - 0.5) * spread,
 		};
-	}, []);
+	}, [panelId]);
 
 	return (
 		<motion.div
-			className={styles.folderPanel}
-			drag
-			dragMomentum={false}
-			whileHover={{ scale: 1.02, boxShadow: '0 12px 40px rgba(0,0,0,0.25)' }}
-			whileTap={{ scale: 0.98 }}
+			className={`${styles.folderPanel} ${panelId ? styles.folderPanelIndependent : ''}`}
 			initial={{ opacity: 0, scale: 0.9, x: pos.x, y: pos.y }}
 			animate={{ opacity: 1, scale: 1, x: pos.x, y: pos.y }}
 			exit={{ opacity: 0, scale: 0.85 }}
 			transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+			drag={draggable}
+			dragListener={false}
+			dragControls={dragControls}
+			dragMomentum={false}
+			whileDrag={{ scale: 1.03 }}
 		>
-			<div className={styles.folderPanelHeader}>
+			<div
+				className={styles.folderPanelHeader}
+				style={draggable ? { cursor: 'grab', touchAction: 'none' } : undefined}
+				onPointerDown={(e) => { if (draggable) dragControls.start(e); }}
+			>
 				<span className={styles.folderPanelLabel}>{label}</span>
 				<button
 					type="button"
@@ -401,7 +432,7 @@ function FolderPanel({ label, onClose, children }: FolderPanelProps) {
 					</svg>
 				</button>
 			</div>
-			<div className={styles.folderPanelBody}>
+			<div className={`${styles.folderPanelBody} ${panelId ? styles.folderPanelBodyIndependent : ''}`}>
 				{children || <span>Contenido de {label}</span>}
 			</div>
 		</motion.div>
@@ -415,15 +446,13 @@ interface SubPanelLinkProps {
 
 function SubPanelLink({ label, onOpen }: SubPanelLinkProps) {
 	return (
-		<motion.a
-			href="#"
+		<button
+			type="button"
 			className={styles.subPanelLink}
 			onClick={(e) => { e.preventDefault(); e.stopPropagation(); onOpen(label); }}
-			whileHover={{ x: 4, color: '#1a7a5c' }}
-			transition={{ type: 'spring', stiffness: 400, damping: 20 }}
 		>
 			{label}
-		</motion.a>
+		</button>
 	);
 }
 

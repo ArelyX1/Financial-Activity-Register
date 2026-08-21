@@ -14,6 +14,9 @@ class RoleInputPort(ABC):
     async def create(self, data: Role) -> Role: ...
 
     @abstractmethod
+    async def update(self, role_id: int, data: Role) -> Role: ...
+
+    @abstractmethod
     async def create_permission(self, data: Permission) -> Permission: ...
 
     @abstractmethod

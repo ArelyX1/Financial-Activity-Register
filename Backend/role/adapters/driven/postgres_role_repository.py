@@ -132,6 +132,19 @@ class PostgresRoleRepository(RoleRepositoryPort):
         await self._session.commit()
         return await self.find_by_id(role_id)
 
+    async def update(self, role_id: int, data: Role) -> Role:
+        stmt = select(S02RoleORM).where(S02RoleORM.nIdRole == role_id)
+        orm = (await self._session.execute(stmt)).scalar_one_or_none()
+        if not orm:
+            raise ValueError(f"Role with id '{role_id}' not found")
+        orm.cName = data.c_name
+        orm.cDescription = data.c_description
+        orm.cCategory = data.c_category
+        orm.bIsSystemRole = data.b_is_system_role
+        orm.bIsActive = data.b_is_active
+        await self._session.commit()
+        return await self.find_by_id(role_id)
+
     async def find_by_id(self, role_id: int) -> Optional[Role]:
         stmt = (
             select(S02RoleORM)

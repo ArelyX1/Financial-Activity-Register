@@ -38,6 +38,25 @@ class RoleService(RoleInputPort):
         data.c_category = category
         return await self._repo.create(data)
 
+    async def update(self, role_id: int, data: Role) -> Role:
+        existing = await self._repo.find_by_id(role_id)
+        if not existing:
+            raise ValueError(f"Role with id '{role_id}' not found")
+        name = (data.c_name or "").strip()
+        if not name:
+            raise ValueError("Role name is required")
+        if len(name) > 50:
+            raise ValueError("Role name must be 50 characters or less")
+        category = (data.c_category or "").strip()
+        if category not in ("Employee", "Client"):
+            raise ValueError("Role category must be 'Employee' or 'Client'")
+        duplicate = await self._repo.find_by_name(name)
+        if duplicate and duplicate.n_id_role != role_id:
+            raise ValueError(f"Role '{name}' already exists")
+        data.c_name = name
+        data.c_category = category
+        return await self._repo.update(role_id, data)
+
     async def create_permission(self, data: Permission) -> Permission:
         code = (data.c_code or "").strip()
         if not code:

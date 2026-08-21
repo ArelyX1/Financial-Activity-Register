@@ -1,6 +1,7 @@
 p, , person
 p, , create_person
 p, ROL-C, create_role
+p, ROL-C, update_role
 p, ROL-A, assign_person_role
 p, ROL-C, assign_role_permissions
 p, , update_person

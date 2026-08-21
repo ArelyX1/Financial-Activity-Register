@@ -3,7 +3,7 @@
  * La URL se lee del .env (PUBLIC_API_URL) en build time.
  */
 
-import { getRefreshToken, saveSession, clearSession } from './session';
+import { getRefreshToken, saveSession, clearSession, sessionExpiredByInactivity } from './session';
 
 const API_URL: string | undefined = import.meta.env.PUBLIC_API_URL;
 
@@ -11,10 +11,7 @@ interface GraphQLError {
 	message?: string;
 }
 
-export async function graphql<T>(
-	query: string,
-	variables: Record<string, unknown>
-): Promise<T> {
+async function rawRequest<T>(query: string, variables: Record<string, unknown>): Promise<T> {
 	if (!API_URL) {
 		throw new Error('PUBLIC_API_URL no está configurado en el .env');
 	}
@@ -34,6 +31,44 @@ export async function graphql<T>(
 	return body.data as T;
 }
 
+let refreshInflight: Promise<boolean> | null = null;
+
+export function refreshOnce(): Promise<boolean> {
+	if (!refreshInflight) {
+		refreshInflight = refreshAccessToken().finally(() => {
+			refreshInflight = null;
+		});
+	}
+	return refreshInflight;
+}
+
+function redirectToLogin(): void {
+	clearSession();
+	window.location.href = '/';
+}
+
+export async function graphql<T>(
+	query: string,
+	variables: Record<string, unknown>
+): Promise<T> {
+	try {
+		return await rawRequest<T>(query, variables);
+	} catch (e) {
+		const msg = e instanceof Error ? e.message : '';
+		if (!/invalid or expired token/i.test(msg)) throw e;
+
+		// Token expirado en el backend. Si la sesión sigue dentro de su ventana
+		// de validez local (uso activo), se regenera y se reintenta; si ya cruzó
+		// su expiración (inactividad), se va al login.
+		if (!query.includes('refresh_token') && !sessionExpiredByInactivity()) {
+			const ok = await refreshOnce();
+			if (ok) return await rawRequest<T>(query, variables);
+		}
+		redirectToLogin();
+		throw e;
+	}
+}
+
 /** Verifica contra el backend si el token tiene acceso al panel admin (permiso ACC-A). */
 export async function canAccessAdmin(token: string): Promise<boolean> {
 	const data = await graphql<{ go_admin_page: boolean }>(
@@ -51,7 +86,7 @@ export async function refreshAccessToken(): Promise<boolean> {
 	if (!refreshToken) return false;
 
 	try {
-		const data = await graphql<{
+		const data = await rawRequest<{
 			refresh_token: {
 				success: boolean;
 				access_token: string | null;

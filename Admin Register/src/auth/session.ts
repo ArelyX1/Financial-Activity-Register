@@ -51,6 +51,13 @@ export function isTokenExpiringSoon(withinMs = 60_000): boolean {
 	return Date.now() >= expires - withinMs;
 }
 
+const EXPIRY_GRACE_MS = 5_000;
+
+export function sessionExpiredByInactivity(): boolean {
+	const expires = getTokenExpiresAt();
+	return expires !== null && Date.now() > expires + EXPIRY_GRACE_MS;
+}
+
 export function saveUser(user: SessionUser): void {
 	localStorage.setItem(USER_KEY, JSON.stringify(user));
 }
@@ -70,4 +77,24 @@ export function clearSession(): void {
 	localStorage.removeItem(REFRESH_TOKEN_KEY);
 	localStorage.removeItem(TOKEN_EXPIRES_KEY);
 	localStorage.removeItem(USER_KEY);
+}
+
+const ACTIVITY_EVENTS = ['pointerdown', 'keydown', 'wheel', 'touchstart'] as const;
+
+let lastActivity = Date.now();
+
+export function touchActivity(): void {
+	lastActivity = Date.now();
+}
+
+export function wasActiveRecently(withinMs = 120_000): boolean {
+	return Date.now() - lastActivity < withinMs;
+}
+
+export function startActivityTracking(): () => void {
+	const onTouch = () => touchActivity();
+	ACTIVITY_EVENTS.forEach(e => window.addEventListener(e, onTouch, { passive: true }));
+	return () => {
+		ACTIVITY_EVENTS.forEach(e => window.removeEventListener(e, onTouch));
+	};
 }

@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { getAccessToken, isTokenExpiringSoon, clearSession } from '../../session';
+import { getAccessToken, isTokenExpiringSoon, clearSession, sessionExpiredByInactivity } from '../../session';
 import { canAccessAdmin, refreshAccessToken } from '../../api';
+import { startSessionKeepAlive } from '../../keepalive';
 
 /**
  * Guard — protege una ruta verificando el token contra el backend.
@@ -26,6 +27,11 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
 
 			// Auto-refresh if token is about to expire (within 60s)
 			if (isTokenExpiringSoon(60_000)) {
+				if (sessionExpiredByInactivity()) {
+					clearSession();
+					if (!cancelled) setState('denied');
+					return;
+				}
 				const refreshed = await refreshAccessToken();
 				if (cancelled) return;
 				if (!refreshed) {
@@ -64,6 +70,11 @@ export default function RequireAuth({ children }: { children: ReactNode }) {
 		if (state === 'denied') {
 			window.location.href = '/';
 		}
+	}, [state]);
+
+	useEffect(() => {
+		if (state !== 'allowed') return;
+		return startSessionKeepAlive();
 	}, [state]);
 
 	if (state !== 'allowed') {

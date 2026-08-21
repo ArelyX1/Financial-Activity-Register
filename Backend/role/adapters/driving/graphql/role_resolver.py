@@ -41,6 +41,15 @@ class CreateRoleInput:
 
 
 @strawberry.input
+class UpdateRoleInput:
+    name: str
+    category: str
+    description: str | None = None
+    is_system_role: bool = False
+    is_active: bool = True
+
+
+@strawberry.input
 class AssignRolePermissionsInput:
     role_id: int
     permission_codes: List[str] = strawberry.field(default_factory=list)
@@ -91,6 +100,42 @@ class Mutation:
                         created_at=str(p.t_created_at) if p.t_created_at else None,
                     )
                     for p in created.permissions
+                ],
+            )
+
+    @strawberry.mutation
+    async def update_role(self, info: Info, token: str, role_id: int, input: UpdateRoleInput) -> Role:
+        await enforce_access(token, "update_role")
+        async with AsyncSessionLocal() as session:
+            repo = PostgresRoleRepository(session)
+            service = RoleService(repo)
+            entity = RoleEntity(
+                c_name=input.name,
+                c_description=input.description,
+                c_category=input.category,
+                b_is_system_role=input.is_system_role,
+                b_is_active=input.is_active,
+            )
+            updated = await service.update(role_id, entity)
+            return Role(
+                id=updated.n_id_role,
+                name=updated.c_name,
+                description=updated.c_description,
+                category=updated.c_category,
+                is_system_role=updated.b_is_system_role,
+                is_active=updated.b_is_active,
+                created_at=str(updated.t_created_at) if updated.t_created_at else None,
+                permissions=[
+                    Permission(
+                        id=p.n_id_permission,
+                        code=p.c_code,
+                        name=p.c_name,
+                        description=p.c_description,
+                        module=p.c_module,
+                        is_active=p.b_is_active,
+                        created_at=str(p.t_created_at) if p.t_created_at else None,
+                    )
+                    for p in updated.permissions
                 ],
             )
 

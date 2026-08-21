@@ -20,6 +20,9 @@ class RoleRepositoryPort(ABC):
     async def find_by_id(self, role_id: int) -> Optional[Role]: ...
 
     @abstractmethod
+    async def update(self, role_id: int, data: Role) -> Role: ...
+
+    @abstractmethod
     async def create_permission(self, data: Permission) -> Permission: ...
 
     @abstractmethod
