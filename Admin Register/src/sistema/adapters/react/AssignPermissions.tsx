@@ -259,8 +259,12 @@ export function RolesPanel() {
 		const q = searchRole.toLowerCase();
 		return roles
 			.filter(r => {
-				if (q && !r.name.toLowerCase().includes(q) && !(r.description || '').toLowerCase().includes(q) && (r.category || '').toLowerCase().includes(q) === false && q.length === 0) return true;
-				if (q && !r.name.toLowerCase().includes(q) && !(r.description || '').toLowerCase().includes(q) && !(r.category || '').toLowerCase().includes(q)) return false;
+				const matchesSearch =
+					!q ||
+					r.name.toLowerCase().includes(q) ||
+					(r.description || '').toLowerCase().includes(q) ||
+					(r.category || '').toLowerCase().includes(q);
+				if (!matchesSearch) return false;
 				if (statusFilter === 'activos' && !r.is_active) return false;
 				if (statusFilter === 'inactivos' && r.is_active) return false;
 				if (categoryFilter !== 'todas' && (r.category || '') !== categoryFilter) return false;

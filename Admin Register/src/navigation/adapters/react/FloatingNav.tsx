@@ -4,6 +4,7 @@ import { clearSession, getUser, saveUser, getAccessToken, getRefreshToken, type 
 import { fetchCurrentUser, graphql } from '../../../auth/api';
 import { AssignPermissionsProvider, PermissionsPanel, RolesPanel, AssignmentPanel } from '../../../sistema/adapters/react/AssignPermissions';
 import { AddRolePanel } from '../../../sistema/adapters/react/AddRole';
+import { EditRolePanel } from '../../../sistema/adapters/react/EditRole';
 import styles from './FloatingNav.module.css';
 
 const FOLDERS = [
@@ -340,12 +341,22 @@ export default function FloatingNav() {
 										<div className={styles.folderPanelLinks}>
 											<SubPanelLink label="Asignar Permisos a un Role" onOpen={setOpenSubPanel} />
 											<SubPanelLink label="Agregar Roles" onOpen={setOpenSubPanel} />
-											<SubPanelLink label="Agregar Permisos" onOpen={setOpenSubPanel} />
+											<SubPanelLink label="Editar Roles" onOpen={setOpenSubPanel} />
 										</div>
 									)}
 								</FolderPanel>
 							)}
 						</AnimatePresence>
+						{openSubPanel === 'Editar Roles' && (
+							<AssignPermissionsProvider>
+								<FolderPanel key="roles-edit" label="Todos los Roles" onClose={() => setOpenSubPanel(null)} panelId="roles">
+									<RolesPanel />
+								</FolderPanel>
+								<FolderPanel key="editar-role" label="Editar Role" onClose={() => setOpenSubPanel(null)} panelId="editarRole">
+									<EditRolePanel />
+								</FolderPanel>
+							</AssignPermissionsProvider>
+						)}
 						{openSubPanel === 'Agregar Roles' && (
 							<FolderPanel key="agregar-role" label="Agregar Role" onClose={() => setOpenSubPanel(null)} panelId="agregarRole">
 								<AddRolePanel />
@@ -387,6 +398,7 @@ const PANEL_OFFSETS: Record<string, { x: number; y: number }> = {
 	roles: { x: 20, y: -60 },
 	asignar: { x: -130, y: 120 },
 	agregarRole: { x: 60, y: 40 },
+	editarRole: { x: 20, y: 140 },
 };
 
 function FolderPanel({ label, onClose, children, panelId }: FolderPanelProps) {
