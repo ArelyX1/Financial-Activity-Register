@@ -4,7 +4,7 @@ from account_provider.adapters.driving.graphql.account_provider_resolver import 
 from auth.adapters.driving.graphql.auth_resolver import Query as AuthQuery, Mutation as AuthMutation
 from boundaries.adapters.driving.graphql.boundarie_resolver import Query as BoundarieQuery
 from identification_type.adapters.driving.graphql.identification_type_resolver import Query as IdentificationTypeQuery, Mutation as IdentificationTypeMutation
-from person.adapters.driving.graphql.person_resolver import Mutation as PersonMutation, PersonRolesQuery
+from person.adapters.driving.graphql.person_resolver import Query as PersonQuery, Mutation as PersonMutation, PersonRolesQuery
 from user_account.adapters.driving.graphql.user_account_resolver import Mutation as UserAccountMutation
 from password_recovery.adapters.driving.graphql.password_recovery_resolver import Mutation as PasswordRecoveryMutation
 from role.adapters.driving.graphql.role_resolver import Query as RoleQuery, Mutation as RoleMutation
@@ -17,7 +17,7 @@ from role.adapters.driving.graphql.role_resolver import Query as RoleQuery, Muta
 
 
 @strawberry.type
-class RootQuery(AccountProviderQuery, AuthQuery, BoundarieQuery, IdentificationTypeQuery, RoleQuery, PersonRolesQuery):
+class RootQuery(AccountProviderQuery, AuthQuery, BoundarieQuery, IdentificationTypeQuery, RoleQuery, PersonQuery, PersonRolesQuery):
     pass
 
 
