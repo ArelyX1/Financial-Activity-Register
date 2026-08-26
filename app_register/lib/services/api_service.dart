@@ -292,8 +292,8 @@ class ApiService {
     required String search,
   }) async {
     final query = '''
-      query SearchPersons(\$categories: [String!]!, \$token: String!, \$search: String) {
-        persons_by_role(role_names: [], token: \$token, search: \$search, categories: \$categories) {
+      query SearchPersons(\$search: String!, \$token: String!) {
+        search_persons(search: \$search, token: \$token) {
           id
           name
           paternal_surname
@@ -307,11 +307,10 @@ class ApiService {
       }
     ''';
     final data = await _post(query, {
-      'categories': ['Client'],
-      'token': token,
       'search': search,
+      'token': token,
     });
-    final list = data['persons_by_role'] as List<dynamic>? ?? [];
+    final list = data['search_persons'] as List<dynamic>? ?? [];
     return list.map((e) {
       final m = e as Map<String, dynamic>;
       return PersonData(
