@@ -577,12 +577,19 @@ class PostgresPersonRepository(PersonRepositoryPort):
             "c_status": orm.cStatus,
         }
 
-    async def find_by_role_names(self, role_names: List[str], search: str | None = None) -> List[dict]:
-        subq = (
-            select(S02PersonRoleORM.nIdPerson)
-            .join(S02RoleORM, S02RoleORM.nIdRole == S02PersonRoleORM.nIdRole)
-            .where(S02RoleORM.cName.in_(role_names))
-        )
+    async def find_by_role_names(self, role_names: List[str], search: str | None = None, categories: List[str] | None = None) -> List[dict]:
+        if categories:
+            subq = (
+                select(S02PersonRoleORM.nIdPerson)
+                .join(S02RoleORM, S02RoleORM.nIdRole == S02PersonRoleORM.nIdRole)
+                .where(S02RoleORM.cCategory.in_(categories))
+            )
+        else:
+            subq = (
+                select(S02PersonRoleORM.nIdPerson)
+                .join(S02RoleORM, S02RoleORM.nIdRole == S02PersonRoleORM.nIdRole)
+                .where(S02RoleORM.cName.in_(role_names))
+            )
         stmt = (
             select(
                 S02PersonORM,

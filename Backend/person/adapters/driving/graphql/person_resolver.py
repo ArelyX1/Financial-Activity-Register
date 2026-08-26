@@ -168,12 +168,12 @@ class UpdateWorkshopStatusInput:
     c_status: str
 
 
-async def _resolve_persons_by_role(role_names: List[str], token: str, search: str | None = None) -> List[PersonWithUser]:
+async def _resolve_persons_by_role(role_names: List[str], token: str, search: str | None = None, categories: List[str] | None = None) -> List[PersonWithUser]:
     await enforce_access(token, "persons_by_role")
     async with AsyncSessionLocal() as session:
         repo = PostgresPersonRepository(session)
         service = PersonService(repo)
-        items = await service.find_persons_by_roles(role_names, search=search)
+        items = await service.find_persons_by_roles(role_names, search=search, categories=categories)
         return [
             PersonWithUser(
                 id=row["id"],
@@ -279,8 +279,8 @@ class Query:
             ]
 
     @strawberry.field
-    async def persons_by_role(self, role_names: List[str], token: str, search: str | None = None) -> List[PersonWithUser]:
-        return await _resolve_persons_by_role(role_names, token, search=search)
+    async def persons_by_role(self, role_names: List[str], token: str, search: str | None = None, categories: List[str] | None = None) -> List[PersonWithUser]:
+        return await _resolve_persons_by_role(role_names, token, search=search, categories=categories)
 
     @strawberry.field
     async def search_persons(self, search: str, token: str) -> List[PersonWithUser]:
@@ -361,8 +361,8 @@ class Query:
 @strawberry.type
 class PersonRolesQuery:
     @strawberry.field
-    async def persons_by_role(self, role_names: List[str], token: str, search: str | None = None) -> List[PersonWithUser]:
-        return await _resolve_persons_by_role(role_names, token, search=search)
+    async def persons_by_role(self, role_names: List[str], token: str, search: str | None = None, categories: List[str] | None = None) -> List[PersonWithUser]:
+        return await _resolve_persons_by_role(role_names, token, search=search, categories=categories)
 
 
 @strawberry.type

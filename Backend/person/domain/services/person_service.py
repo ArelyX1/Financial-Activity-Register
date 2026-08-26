@@ -64,8 +64,8 @@ class PersonService(PersonInputPort):
     async def get_person_permissions(self, n_id_person: str) -> List[dict]:
         return await self._repo.find_permissions_by_person_id(n_id_person)
 
-    async def find_persons_by_roles(self, role_names: List[str], search: str | None = None) -> List[dict]:
-        return await self._repo.find_by_role_names(role_names, search=search)
+    async def find_persons_by_roles(self, role_names: List[str], search: str | None = None, categories: List[str] | None = None) -> List[dict]:
+        return await self._repo.find_by_role_names(role_names, search=search, categories=categories)
 
     async def search_by_identification_number(self, search: str) -> List[dict]:
         return await self._repo.search_by_identification_number(search)

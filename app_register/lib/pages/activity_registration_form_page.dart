@@ -34,8 +34,6 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
   TurnOption _turn = TurnOption.morning;
   List<IdTypeData> _idTypes = [];
   IdTypeData? _selectedIdType;
-  List<PersonData> _searchResults = [];
-  bool _searching = false;
   PersonData? _selectedPerson;
 
   @override
@@ -100,35 +98,6 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
     setState(() => _loading = false);
   }
 
-  Future<void> _searchPersons(String query) async {
-    if (query.length < 2) {
-      setState(() {
-        _searchResults = [];
-        _searching = false;
-      });
-      return;
-    }
-    final token = context.read<AppState>().accessToken;
-    if (token.isEmpty) return;
-    setState(() => _searching = true);
-    try {
-      final allResults = await ApiService.searchPersons(
-        token: token,
-        search: query,
-      );
-      if (!mounted) return;
-      setState(() {
-        _searchResults = allResults.where((p) =>
-          p.roleCategories.any((c) => c.toLowerCase() == 'client')
-        ).toList();
-        _searching = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() => _searching = false);
-    }
-  }
-
   void _selectPerson(PersonData person) {
     final matchedType = _idTypes.where((t) => t.id == person.idIdentificationType).toList();
     setState(() {
@@ -137,12 +106,129 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
       _firstNameController.text = person.name ?? '';
       _paternalController.text = person.paternalSurname ?? '';
       _maternalController.text = person.maternalSurname ?? '';
-      _searchResults = [];
       if (matchedType.isNotEmpty) {
         _selectedIdType = matchedType.first;
         _docTypeController.text = matchedType.first.name;
       }
     });
+  }
+
+  void _showDocSearchSheet() {
+    final theme = AppTheme.of(context);
+    final searchController = TextEditingController();
+    List<PersonData> results = [];
+    bool searching = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            String? errorMsg;
+
+            Future<void> doSearch(String q) async {
+              if (q.length < 2) {
+                setModalState(() { results = []; searching = false; errorMsg = null; });
+                return;
+              }
+              setModalState(() { searching = true; errorMsg = null; });
+              try {
+                final token = context.read<AppState>().accessToken;
+                final all = await ApiService.searchPersons(token: token, search: q);
+                setModalState(() { results = all; searching = false; errorMsg = null; });
+              } catch (e) {
+                setModalState(() { searching = false; errorMsg = e.toString(); });
+              }
+            }
+
+            return Container(
+              height: MediaQuery.of(context).size.height * 0.7,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(width: 40, height: 4, decoration: BoxDecoration(
+                    color: AppColors.secondaryText.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  )),
+                  const SizedBox(height: 16),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: TextField(
+                      controller: searchController,
+                      autofocus: true,
+                      keyboardType: TextInputType.number,
+                      decoration: InputDecoration(
+                        hintText: 'Ingrese número de documento...',
+                        prefixIcon: const Icon(Icons.search),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide(color: theme.secondary),
+                        ),
+                      ),
+                      onChanged: (v) => doSearch(v),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  if (searching)
+                    const Padding(
+                      padding: EdgeInsets.all(20),
+                      child: CircularProgressIndicator(),
+                    )
+                  else if (errorMsg != null)
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text(
+                        'Error: $errorMsg',
+                        style: const TextStyle(color: Colors.red),
+                        textAlign: TextAlign.center,
+                      ),
+                    )
+                  else if (results.isEmpty && searchController.text.length >= 2)
+                    Padding(
+                      padding: const EdgeInsets.all(20),
+                      child: Text('No se encontraron resultados', style: TextStyle(color: AppColors.secondaryText)),
+                    )
+                  else
+                    Expanded(
+                      child: ListView.separated(
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        itemCount: results.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1),
+                        itemBuilder: (_, i) {
+                          final p = results[i];
+                          final fullName = [p.name, p.paternalSurname, p.maternalSurname]
+                              .where((e) => e != null && e.isNotEmpty).join(' ');
+                          return ListTile(
+                            contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                            leading: CircleAvatar(
+                              backgroundColor: theme.secondary.withValues(alpha: 0.1),
+                              child: Icon(Icons.person, color: theme.secondary, size: 20),
+                            ),
+                            title: Text(p.identificationNumber, style: TextStyle(fontWeight: FontWeight.w600, color: theme.primaryText)),
+                            subtitle: fullName.isNotEmpty ? Text(fullName, style: TextStyle(fontSize: 13, color: theme.secondaryText)) : null,
+                            trailing: Icon(Icons.chevron_right, color: theme.secondaryText),
+                            onTap: () {
+                              Navigator.pop(ctx);
+                              _selectPerson(p);
+                            },
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() => searchController.dispose());
   }
 
   @override
@@ -247,18 +333,17 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
         children: [
           _buildSectionHeader(theme, 'Datos del Cliente', Icons.person_outline),
           const SizedBox(height: 16),
-          TextFieldWidget(
-            controller: _docNumberController,
-            label: 'Número de Documento',
-            hint: _selectedPerson != null ? '' : 'Ingrese número de documento',
-            prefixIcon: Icons.credit_card,
-            keyboardType: TextInputType.number,
-            readOnly: _selectedPerson != null,
-            onChanged: _selectedPerson != null ? null : (v) {
-              _selectedPerson = null;
-              _searchPersons(v);
-            },
-            suffixIcon: _selectedPerson != null ? Icons.close : null,
+          GestureDetector(
+            onTap: _showDocSearchSheet,
+            child: AbsorbPointer(
+              child: TextFieldWidget(
+                controller: _docNumberController,
+                label: 'Número de Documento',
+                hint: _selectedPerson != null ? '' : 'Buscar por número de documento...',
+                prefixIcon: Icons.credit_card,
+                suffixIcon: _selectedPerson != null ? Icons.close : Icons.search,
+              ),
+            ),
           ),
           if (_selectedPerson != null)
             Padding(
@@ -274,7 +359,6 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
                     _secondNameController.clear();
                     _paternalController.clear();
                     _maternalController.clear();
-                    _searchResults = [];
                   });
                 },
                 child: Text(
@@ -283,73 +367,6 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
                 ),
               ),
             ),
-          if (_searching) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: theme.secondary)),
-                const SizedBox(width: 8),
-                Text('Buscando...', style: theme.bodySmall.copyWith(color: theme.secondaryText)),
-              ],
-            ),
-          ],
-          if (_searchResults.isNotEmpty && !_searching) ...[
-            const SizedBox(height: 4),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 200),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE1E1E1)),
-                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 2))],
-              ),
-              child: ListView.builder(
-                padding: EdgeInsets.zero,
-                shrinkWrap: true,
-                itemCount: _searchResults.length,
-                itemBuilder: (_, i) {
-                  final p = _searchResults[i];
-                  final fullName = [p.name, p.paternalSurname, p.maternalSurname]
-                      .where((e) => e != null && e.isNotEmpty).join(' ');
-                  return InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () => _selectPerson(p),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                      child: Row(
-                        children: [
-                          CircleAvatar(
-                            radius: 16,
-                            backgroundColor: theme.secondary.withValues(alpha: 0.1),
-                            child: Icon(Icons.person, size: 16, color: theme.secondary),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  p.identificationNumber,
-                                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: theme.primaryText),
-                                ),
-                                if (fullName.isNotEmpty)
-                                  Text(
-                                    fullName,
-                                    style: TextStyle(fontSize: 12, color: theme.secondaryText),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                              ],
-                            ),
-                          ),
-                          Icon(Icons.chevron_right, color: theme.secondaryText, size: 20),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ),
-          ],
           const SizedBox(height: 12),
           if (_selectedPerson != null && _selectedIdType != null)
             TextFieldWidget(
