@@ -2,6 +2,7 @@
 import RequireAuth from '../auth/adapters/react/RequireAuth';
 import FloatingNav from '../navigation/adapters/react/FloatingNav';
 import PageReveal from '../ui/adapters/react/PageReveal';
+import PersonalPage from '../personal/adapters/react/PersonalPage';
 import '../styles/global.css';
 import '@fontsource-variable/inter';
 import '@fontsource-variable/plus-jakarta-sans';
@@ -25,9 +26,7 @@ import '@fontsource-variable/plus-jakarta-sans';
 		<RequireAuth client:only="react">
 			<PageReveal client:only="react">
 				<FloatingNav client:only="react" />
-				<div style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:var(--font-body);color:var(--color-primary-text);">
-					<h1>Dashboard de Personal</h1>
-				</div>
+				<PersonalPage client:only="react" />
 			</PageReveal>
 		</RequireAuth>
 	</body>

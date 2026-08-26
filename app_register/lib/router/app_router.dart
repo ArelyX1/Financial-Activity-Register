@@ -7,6 +7,10 @@ import '../pages/executive_profile_page.dart';
 import '../pages/executive_onboarding_page.dart';
 import '../pages/navigation_menu_page.dart';
 import '../pages/settings_notifications_page.dart';
+import '../pages/register_page.dart';
+import '../pages/register_personal_data_page.dart';
+import '../pages/register_account_page.dart';
+import '../pages/register_confirm_page.dart';
 
 final appRouter = GoRouter(
   initialLocation: '/login',
@@ -15,6 +19,26 @@ final appRouter = GoRouter(
       path: '/login',
       name: 'login',
       builder: (context, state) => const LoginPage(),
+    ),
+    GoRoute(
+      path: '/register',
+      name: 'register',
+      builder: (context, state) => const RegisterPage(),
+    ),
+    GoRoute(
+      path: '/register/personal-data',
+      name: 'registerPersonalData',
+      builder: (context, state) => const RegisterPersonalDataPage(),
+    ),
+    GoRoute(
+      path: '/register/account',
+      name: 'registerAccount',
+      builder: (context, state) => const RegisterAccountPage(),
+    ),
+    GoRoute(
+      path: '/register/confirm',
+      name: 'registerConfirm',
+      builder: (context, state) => const RegisterConfirmPage(),
     ),
     GoRoute(
       path: '/dashboard',

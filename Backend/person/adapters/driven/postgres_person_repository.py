@@ -577,7 +577,7 @@ class PostgresPersonRepository(PersonRepositoryPort):
             "c_status": orm.cStatus,
         }
 
-    async def find_by_role_names(self, role_names: List[str]) -> List[dict]:
+    async def find_by_role_names(self, role_names: List[str], search: str | None = None) -> List[dict]:
         subq = (
             select(S02PersonRoleORM.nIdPerson)
             .join(S02RoleORM, S02RoleORM.nIdRole == S02PersonRoleORM.nIdRole)
@@ -597,8 +597,10 @@ class PostgresPersonRepository(PersonRepositoryPort):
             .outerjoin(S02ParticipantORM, S02ParticipantORM.nIdParticipant == S02UserORM.nIdUser)
             .outerjoin(S02SuperiorORM, S02SuperiorORM.nIdSuperior == S02UserORM.nIdUser)
             .where(S02PersonORM.nIdPerson.in_(subq))
-            .order_by(S02PersonORM.cName, S02PersonORM.cMaternalSurname)
         )
+        if search:
+            stmt = stmt.where(S02PersonORM.cIdentificationNumber.ilike(f"%{search}%"))
+        stmt = stmt.order_by(S02PersonORM.cName, S02PersonORM.cMaternalSurname)
         result = await self._session.execute(stmt)
         rows = result.fetchall()
         person_ids = [str(row[0].nIdPerson) for row in rows]

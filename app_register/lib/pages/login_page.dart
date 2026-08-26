@@ -160,6 +160,7 @@ class _LoginPageState extends State<LoginPage>
             refreshToken: result.refreshToken ?? '',
             roles: result.roles,
             permissions: result.permissions,
+            identificationNumber: username,
           );
       context.go('/dashboard');
     } catch (e) {
@@ -294,7 +295,7 @@ class _LoginPageState extends State<LoginPage>
                       style: theme.bodyMedium.copyWith(color: theme.secondaryText),
                     ),
                     TextButton(
-                      onPressed: () {},
+                      onPressed: () => context.go('/register'),
                       child: Text(
                         'Regístrate',
                         style: theme.bodyMedium.copyWith(

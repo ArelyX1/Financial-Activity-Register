@@ -29,7 +29,143 @@ class LoginResult {
   });
 }
 
+class PersonData {
+  final String? id;
+  final String? name;
+  final String? middleName;
+  final String? maternalSurname;
+  final String? paternalSurname;
+  final int idIdentificationType;
+  final String identificationNumber;
+  final int? birthPlaceGadm;
+  final int? residencePlaceGadm;
+  final String? role;
+  final String? username;
+  final String? email;
+
+  const PersonData({
+    this.id,
+    this.name,
+    this.middleName,
+    this.maternalSurname,
+    this.paternalSurname,
+    required this.idIdentificationType,
+    required this.identificationNumber,
+    this.birthPlaceGadm,
+    this.residencePlaceGadm,
+    this.role,
+    this.username,
+    this.email,
+  });
+
+  factory PersonData.fromJson(Map<String, dynamic> json) {
+    return PersonData(
+      id: json['id']?.toString(),
+      name: json['name']?.toString(),
+      middleName: json['middle_name']?.toString(),
+      maternalSurname: json['maternal_surname']?.toString(),
+      paternalSurname: json['paternal_surname']?.toString(),
+      idIdentificationType: json['id_identification_type'] as int? ?? 0,
+      identificationNumber: json['identification_number']?.toString() ?? '',
+      birthPlaceGadm: json['birth_place_gadm'] as int?,
+      residencePlaceGadm: json['residence_place_gadm'] as int?,
+      role: json['role']?.toString(),
+      username: json['username']?.toString(),
+      email: json['email']?.toString(),
+    );
+  }
+
+  bool get isRegistered => name != null && name!.isNotEmpty;
+}
+
+class LocationData {
+  final int id;
+  final String code;
+  final String name;
+
+  const LocationData({required this.id, required this.code, required this.name});
+
+  factory LocationData.fromJson(Map<String, dynamic> json) {
+    return LocationData(
+      id: json['id'] as int,
+      code: json['code']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+    );
+  }
+}
+
+class IdTypeData {
+  final int id;
+  final String countryIso;
+  final String? code;
+  final String name;
+  final int minLength;
+  final int maxLength;
+  final bool? isNumeric;
+  final bool? isActive;
+
+  const IdTypeData({
+    required this.id,
+    required this.countryIso,
+    this.code,
+    required this.name,
+    required this.minLength,
+    required this.maxLength,
+    this.isNumeric,
+    this.isActive,
+  });
+
+  factory IdTypeData.fromJson(Map<String, dynamic> json) {
+    return IdTypeData(
+      id: json['id'] as int,
+      countryIso: json['country_iso']?.toString() ?? 'PE',
+      code: json['code']?.toString(),
+      name: json['name']?.toString() ?? '',
+      minLength: json['min_length'] as int? ?? 1,
+      maxLength: json['max_length'] as int? ?? 0,
+      isNumeric: json['is_numeric'] as bool?,
+      isActive: json['is_active'] as bool?,
+    );
+  }
+}
+
 class ApiService {
+  static Future<Map<String, dynamic>> _post(String query, [Map<String, dynamic>? variables]) async {
+    final response = await http.post(
+      Uri.parse(ApiConfig.apiUrl),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({
+        'query': query,
+        if (variables != null) 'variables': variables,
+      }),
+    );
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    if (response.statusCode != 200 || body['errors'] != null) {
+      throw ApiException(response.statusCode, _extractError(body));
+    }
+    return body['data'] as Map<String, dynamic>;
+  }
+
+  static Future<List<IdTypeData>> getIdentificationTypes({required String token}) async {
+    final query = '''
+      query GetIdentificationTypes(\$token: String!) {
+        identification_types(token: \$token) {
+          id
+          country_iso
+          code
+          name
+          min_length
+          max_length
+          is_numeric
+          is_active
+        }
+      }
+    ''';
+    final data = await _post(query, {'token': token});
+    final list = data['identification_types'] as List<dynamic>? ?? [];
+    return list.map((e) => IdTypeData.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
   static Future<LoginResult> login({
     required String identificationNumber,
     required String password,
@@ -48,40 +184,25 @@ class ApiService {
       }
     ''';
 
-    final response = await http.post(
-      Uri.parse(ApiConfig.apiUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'query': query,
-        'variables': {
-          'identificationNumber': identificationNumber,
-          'password': password,
-        },
-      }),
-    );
+    final data = await _post(query, {
+      'identificationNumber': identificationNumber,
+      'password': password,
+    });
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode != 200 || body['errors'] != null) {
-      throw ApiException(
-        response.statusCode,
-        _extractError(body),
-      );
-    }
-
-    final data = body['data']?['login'] as Map<String, dynamic>?;
-    final success = data?['success'] == true;
-    final roles = (data?['roles'] as List<dynamic>? ?? [])
+    final loginData = data['login'] as Map<String, dynamic>?;
+    final success = loginData?['success'] == true;
+    final roles = (loginData?['roles'] as List<dynamic>? ?? [])
         .map((e) => e.toString())
         .toList();
-    final permissions = ((data?['permissions'] as List<dynamic>? ?? [])
+    final permissions = ((loginData?['permissions'] as List<dynamic>? ?? [])
             .map((e) => (e as Map<String, dynamic>)['code']?.toString() ?? ''))
         .where((e) => e.isNotEmpty)
         .toList();
 
     return LoginResult(
       success: success,
-      accessToken: data?['access_token'] as String?,
-      refreshToken: data?['refresh_token'] as String?,
+      accessToken: loginData?['access_token'] as String?,
+      refreshToken: loginData?['refresh_token'] as String?,
       roles: roles,
       permissions: permissions,
     );
@@ -93,24 +214,197 @@ class ApiService {
         go_mobil_app(token: \$token)
       }
     ''';
+    final data = await _post(query, {'token': token});
+    return data['go_mobil_app'] == true;
+  }
 
-    final response = await http.post(
-      Uri.parse(ApiConfig.apiUrl),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'query': query,
-        'variables': {'token': token},
-      }),
-    );
+  static Future<PersonData?> getPerson({required String identificationNumber}) async {
+    final query = '''
+      query GetPerson(\$identificationNumber: String!) {
+        person(identification_number: \$identificationNumber) {
+          id
+          name
+          middle_name
+          maternal_surname
+          paternal_surname
+          id_identification_type
+          identification_number
+          birth_place_gadm
+          residence_place_gadm
+          role
+          username
+          email
+        }
+      }
+    ''';
+    final data = await _post(query, {'identificationNumber': identificationNumber});
+    final personJson = data['person'] as Map<String, dynamic>?;
+    if (personJson == null) return null;
+    return PersonData.fromJson(personJson);
+  }
 
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode != 200 || body['errors'] != null) {
-      throw ApiException(
-        response.statusCode,
-        _extractError(body),
+  static Future<List<LocationData>> getGeo1() async {
+    final query = '''
+      query { geo1 { id code name } }
+    ''';
+    final data = await _post(query);
+    final list = data['geo1'] as List<dynamic>? ?? [];
+    return list.map((e) => LocationData.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<LocationData>> getGeo2({required int geo1Id}) async {
+    final query = '''
+      query GetGeo2(\$geo1Id: Int!) {
+        geo2(geo1_id: \$geo1Id) { id code name }
+      }
+    ''';
+    final data = await _post(query, {'geo1Id': geo1Id});
+    final list = data['geo2'] as List<dynamic>? ?? [];
+    return list.map((e) => LocationData.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<LocationData>> getGeo3({required int geo2Id}) async {
+    final query = '''
+      query GetGeo3(\$geo2Id: Int!) {
+        geo3(geo2_id: \$geo2Id) { id code name }
+      }
+    ''';
+    final data = await _post(query, {'geo2Id': geo2Id});
+    final list = data['geo3'] as List<dynamic>? ?? [];
+    return list.map((e) => LocationData.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<LocationData>> getGeo4({required int geo3Id}) async {
+    final query = '''
+      query GetGeo4(\$geo3Id: Int!) {
+        geo4(geo3_id: \$geo3Id) { id code name }
+      }
+    ''';
+    final data = await _post(query, {'geo3Id': geo3Id});
+    final list = data['geo4'] as List<dynamic>? ?? [];
+    return list.map((e) => LocationData.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  static Future<List<PersonData>> searchPersonsByRole({
+    required String token,
+    required List<String> roleNames,
+    String? search,
+  }) async {
+    final query = '''
+      query SearchPersons(\$roleNames: [String!]!, \$token: String!, \$search: String) {
+        persons_by_role(role_names: \$roleNames, token: \$token, search: \$search) {
+          id
+          name
+          last_name
+          identification_number
+          id_identification_type
+          email
+          username
+          roles
+        }
+      }
+    ''';
+    final data = await _post(query, {
+      'roleNames': roleNames,
+      'token': token,
+      if (search != null) 'search': search,
+    });
+    final list = data['persons_by_role'] as List<dynamic>? ?? [];
+    return list.map((e) {
+      final m = e as Map<String, dynamic>;
+      return PersonData(
+        id: m['id']?.toString(),
+        name: m['name']?.toString(),
+        identificationNumber: m['identification_number']?.toString() ?? '',
+        idIdentificationType: m['id_identification_type'] as int? ?? 0,
+        email: m['email']?.toString(),
+        username: m['username']?.toString(),
       );
-    }
-    return body['data']?['go_mobil_app'] == true;
+    }).toList();
+  }
+
+  static Future<bool> createPerson({
+    required int idIdentificationType,
+    required String identificationNumber,
+    required List<String> roleNames,
+  }) async {
+    final query = '''
+      mutation CreatePerson(\$input: CreatePersonInput!) {
+        create_person(input: \$input) {
+          id
+          identification_number
+        }
+      }
+    ''';
+    await _post(query, {
+      'input': {
+        'id_identification_type': idIdentificationType,
+        'identification_number': identificationNumber,
+        'role_names': roleNames,
+      },
+    });
+    return true;
+  }
+
+  static Future<bool> registerPerson({
+    required String identificationNumber,
+    required String name,
+    String? middleName,
+    required String maternalSurname,
+    required String paternalSurname,
+    required int birthPlaceGadm,
+    required int residencePlaceGadm,
+  }) async {
+    final query = '''
+      mutation Register(\$input: RegisterInput!) {
+        register(input: \$input) {
+          id
+          identification_number
+        }
+      }
+    ''';
+    await _post(query, {
+      'input': {
+        'identification_number': identificationNumber,
+        'name': name,
+        'middle_name': middleName,
+        'maternal_surname': maternalSurname,
+        'paternal_surname': paternalSurname,
+        'birth_place_gadm': birthPlaceGadm,
+        'residence_place_gadm': residencePlaceGadm,
+      },
+    });
+    return true;
+  }
+
+  static Future<bool> createUser({
+    required String identificationNumber,
+    required String username,
+    required String email,
+    required String password,
+    required int nIdAccountProvider,
+    String providerId = '',
+  }) async {
+    final query = '''
+      mutation CreateUser(\$input: CreateUserInput!) {
+        create_user(input: \$input) {
+          id
+          username
+          email
+        }
+      }
+    ''';
+    await _post(query, {
+      'input': {
+        'identification_number': identificationNumber,
+        'username': username,
+        'email': email,
+        'password': password,
+        'n_id_account_provider': nIdAccountProvider,
+        'provider_id': providerId,
+      },
+    });
+    return true;
   }
 
   static String _extractError(Map<String, dynamic> body) {
