@@ -42,6 +42,7 @@ class PersonData {
   final String? role;
   final String? username;
   final String? email;
+  final List<String> roleCategories;
 
   const PersonData({
     this.id,
@@ -56,6 +57,7 @@ class PersonData {
     this.role,
     this.username,
     this.email,
+    this.roleCategories = const [],
   });
 
   factory PersonData.fromJson(Map<String, dynamic> json) {
@@ -285,40 +287,42 @@ class ApiService {
     return list.map((e) => LocationData.fromJson(e as Map<String, dynamic>)).toList();
   }
 
-  static Future<List<PersonData>> searchPersonsByRole({
+  static Future<List<PersonData>> searchPersons({
     required String token,
-    required List<String> roleNames,
-    String? search,
+    required String search,
   }) async {
     final query = '''
-      query SearchPersons(\$roleNames: [String!]!, \$token: String!, \$search: String) {
-        persons_by_role(role_names: \$roleNames, token: \$token, search: \$search) {
+      query SearchPersons(\$search: String!, \$token: String!) {
+        search_persons(search: \$search, token: \$token) {
           id
           name
-          last_name
+          paternal_surname
+          maternal_surname
           identification_number
           id_identification_type
           email
           username
-          roles
+          role_categories
         }
       }
     ''';
     final data = await _post(query, {
-      'roleNames': roleNames,
+      'search': search,
       'token': token,
-      if (search != null) 'search': search,
     });
-    final list = data['persons_by_role'] as List<dynamic>? ?? [];
+    final list = data['search_persons'] as List<dynamic>? ?? [];
     return list.map((e) {
       final m = e as Map<String, dynamic>;
       return PersonData(
         id: m['id']?.toString(),
         name: m['name']?.toString(),
+        paternalSurname: m['paternal_surname']?.toString(),
+        maternalSurname: m['maternal_surname']?.toString(),
         identificationNumber: m['identification_number']?.toString() ?? '',
         idIdentificationType: m['id_identification_type'] as int? ?? 0,
         email: m['email']?.toString(),
         username: m['username']?.toString(),
+        roleCategories: (m['role_categories'] as List<dynamic>? ?? []).map((e) => e.toString()).toList(),
       );
     }).toList();
   }

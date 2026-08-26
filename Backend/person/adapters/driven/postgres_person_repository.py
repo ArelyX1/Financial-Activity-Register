@@ -642,6 +642,55 @@ class PostgresPersonRepository(PersonRepositoryPort):
             for row in rows
         ]
 
+    async def search_by_identification_number(self, search: str) -> List[dict]:
+        stmt = (
+            select(
+                S02PersonORM,
+                S02UserORM,
+            )
+            .select_from(S02PersonORM)
+            .outerjoin(S02UserORM, S02UserORM.nIdUser == S02PersonORM.nIdPerson)
+            .where(S02PersonORM.cIdentificationNumber.ilike(f"%{search}%"))
+            .order_by(S02PersonORM.cName, S02PersonORM.cMaternalSurname)
+            .limit(30)
+        )
+        result = await self._session.execute(stmt)
+        rows = result.fetchall()
+        person_ids = [str(row[0].nIdPerson) for row in rows]
+        roles_map = {}
+        categories_map = {}
+        if person_ids:
+            roles_stmt = (
+                select(S02PersonRoleORM.nIdPerson, S02RoleORM.cName, S02RoleORM.cCategory)
+                .join(S02RoleORM, S02RoleORM.nIdRole == S02PersonRoleORM.nIdRole)
+                .where(S02PersonRoleORM.nIdPerson.in_(person_ids))
+            )
+            roles_result = await self._session.execute(roles_stmt)
+            for pid, rname, rcat in roles_result:
+                pid_str = str(pid)
+                roles_map.setdefault(pid_str, []).append(rname)
+                if rcat:
+                    categories_map.setdefault(pid_str, []).append(rcat)
+        return [
+            {
+                "id": str(row[0].nIdPerson),
+                "name": row[0].cName or "",
+                "paternal_surname": row[0].cPaternalSurname or "",
+                "maternal_surname": row[0].cMaternalSurname or "",
+                "identification_number": row[0].cIdentificationNumber or "",
+                "id_identification_type": row[0].nIdIdentificationType or 0,
+                "birth_place_gadm": row[0].nBirthPlaceGadm,
+                "residence_place_gadm": row[0].nResidencePlaceGadm,
+                "email": row[1].cEmail if row[1] else None,
+                "username": row[1].cUsername if row[1] else None,
+                "is_registered": row[1] is not None,
+                "is_active": row[1].bIsActive if row[1] else None,
+                "roles": roles_map.get(str(row[0].nIdPerson), []),
+                "role_categories": categories_map.get(str(row[0].nIdPerson), []),
+            }
+            for row in rows
+        ]
+
     async def find_participants_by_program(self, program_id: str) -> List[dict]:
         sql = text("""
             SELECT

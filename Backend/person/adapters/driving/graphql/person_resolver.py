@@ -55,6 +55,8 @@ class PersonWithUser:
     id: str
     name: str
     last_name: str
+    paternal_surname: str | None = None
+    maternal_surname: str | None = None
     identification_number: str
     id_identification_type: int = 0
     email: str | None = None
@@ -73,6 +75,7 @@ class PersonWithUser:
     residence_place_gadm: int | None = None
     birth_place_gadm: int | None = None
     roles: List[str]
+    role_categories: List[str]
 
 
 @strawberry.type
@@ -278,6 +281,34 @@ class Query:
     @strawberry.field
     async def persons_by_role(self, role_names: List[str], token: str, search: str | None = None) -> List[PersonWithUser]:
         return await _resolve_persons_by_role(role_names, token, search=search)
+
+    @strawberry.field
+    async def search_persons(self, search: str, token: str) -> List[PersonWithUser]:
+        await enforce_access(token, "persons_by_role")
+        async with AsyncSessionLocal() as session:
+            repo = PostgresPersonRepository(session)
+            service = PersonService(repo)
+            items = await service.search_by_identification_number(search)
+            return [
+                PersonWithUser(
+                    id=row["id"],
+                    name=row["name"],
+                    last_name=_combine_last_name(row.get("paternal_surname", ""), row.get("maternal_surname", "")),
+                    paternal_surname=row.get("paternal_surname", ""),
+                    maternal_surname=row.get("maternal_surname", ""),
+                    identification_number=row["identification_number"],
+                    id_identification_type=row["id_identification_type"],
+                    email=row["email"],
+                    username=row["username"],
+                    is_active=row["is_active"],
+                    is_registered=row["is_registered"],
+                    roles=row["roles"],
+                    role_categories=row.get("role_categories", []),
+                    birth_place_gadm=row.get("birth_place_gadm"),
+                    residence_place_gadm=row.get("residence_place_gadm"),
+                )
+                for row in items
+            ]
 
     @strawberry.field
     async def available_programs(self, identification_number: str, token: str) -> List[AvailableProgramType]:

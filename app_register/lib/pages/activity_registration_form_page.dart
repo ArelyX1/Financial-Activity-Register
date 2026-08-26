@@ -112,14 +112,15 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
     if (token.isEmpty) return;
     setState(() => _searching = true);
     try {
-      final results = await ApiService.searchPersonsByRole(
+      final allResults = await ApiService.searchPersons(
         token: token,
-        roleNames: ['client'],
         search: query,
       );
       if (!mounted) return;
       setState(() {
-        _searchResults = results;
+        _searchResults = allResults.where((p) =>
+          p.roleCategories.any((c) => c.toLowerCase() == 'client')
+        ).toList();
         _searching = false;
       });
     } catch (e) {
@@ -129,6 +130,7 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
   }
 
   void _selectPerson(PersonData person) {
+    final matchedType = _idTypes.where((t) => t.id == person.idIdentificationType).toList();
     setState(() {
       _selectedPerson = person;
       _docNumberController.text = person.identificationNumber;
@@ -136,6 +138,10 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
       _paternalController.text = person.paternalSurname ?? '';
       _maternalController.text = person.maternalSurname ?? '';
       _searchResults = [];
+      if (matchedType.isNotEmpty) {
+        _selectedIdType = matchedType.first;
+        _docTypeController.text = matchedType.first.name;
+      }
     });
   }
 
@@ -241,81 +247,130 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
         children: [
           _buildSectionHeader(theme, 'Datos del Cliente', Icons.person_outline),
           const SizedBox(height: 16),
-          Stack(
-            clipBehavior: Clip.none,
-            children: [
-              TextFieldWidget(
-                controller: _docNumberController,
-                label: 'Número de Documento',
-                hint: 'Ingrese número de documento',
-                prefixIcon: Icons.credit_card,
-                keyboardType: TextInputType.number,
-                onChanged: (v) {
-                  _selectedPerson = null;
-                  _searchPersons(v);
-                },
-              ),
-              if (_searching)
-                Positioned(
-                  right: 12, top: 14,
-                  child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: theme.secondary)),
-                ),
-              if (_searchResults.isNotEmpty && !_searching)
-                Positioned(
-                  top: 58, left: 0, right: 0,
-                  child: Material(
-                    elevation: 4,
-                    borderRadius: BorderRadius.circular(12),
-                    child: Container(
-                      constraints: const BoxConstraints(maxHeight: 200),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: const Color(0xFFE1E1E1)),
-                      ),
-                      child: ListView.builder(
-                        padding: EdgeInsets.zero,
-                        shrinkWrap: true,
-                        itemCount: _searchResults.length,
-                        itemBuilder: (_, i) {
-                          final p = _searchResults[i];
-                          return ListTile(
-                            dense: true,
-                            leading: CircleAvatar(
-                              radius: 16,
-                              backgroundColor: theme.secondary.withValues(alpha: 0.1),
-                              child: Icon(Icons.person, size: 16, color: theme.secondary),
-                            ),
-                            title: Text(
-                              p.identificationNumber,
-                              style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: theme.primaryText),
-                            ),
-                            subtitle: Text(
-                              [p.name, p.paternalSurname].where((e) => e != null && e.isNotEmpty).join(' '),
-                              style: TextStyle(fontSize: 12, color: theme.secondaryText),
-                            ),
-                            onTap: () => _selectPerson(p),
-                          );
-                        },
-                      ),
-                    ),
-                  ),
-                ),
-            ],
+          TextFieldWidget(
+            controller: _docNumberController,
+            label: 'Número de Documento',
+            hint: _selectedPerson != null ? '' : 'Ingrese número de documento',
+            prefixIcon: Icons.credit_card,
+            keyboardType: TextInputType.number,
+            readOnly: _selectedPerson != null,
+            onChanged: _selectedPerson != null ? null : (v) {
+              _selectedPerson = null;
+              _searchPersons(v);
+            },
+            suffixIcon: _selectedPerson != null ? Icons.close : null,
           ),
-          const SizedBox(height: 12),
-          GestureDetector(
-            onTap: _showIdTypePicker,
-            child: AbsorbPointer(
-              child: TextFieldWidget(
-                controller: _docTypeController,
-                label: 'Tipo de Documento',
-                hint: _idTypes.isEmpty ? 'Cargando...' : 'Seleccionar tipo',
-                prefixIcon: Icons.badge_outlined,
-                suffixIcon: Icons.arrow_drop_down,
+          if (_selectedPerson != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4, left: 4),
+              child: GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _selectedPerson = null;
+                    _selectedIdType = null;
+                    _docNumberController.clear();
+                    _docTypeController.clear();
+                    _firstNameController.clear();
+                    _secondNameController.clear();
+                    _paternalController.clear();
+                    _maternalController.clear();
+                    _searchResults = [];
+                  });
+                },
+                child: Text(
+                  'Limpiar selección',
+                  style: theme.bodySmall.copyWith(color: theme.secondary, fontWeight: FontWeight.w600),
+                ),
               ),
             ),
-          ),
+          if (_searching) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2, color: theme.secondary)),
+                const SizedBox(width: 8),
+                Text('Buscando...', style: theme.bodySmall.copyWith(color: theme.secondaryText)),
+              ],
+            ),
+          ],
+          if (_searchResults.isNotEmpty && !_searching) ...[
+            const SizedBox(height: 4),
+            Container(
+              constraints: const BoxConstraints(maxHeight: 200),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE1E1E1)),
+                boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.08), blurRadius: 8, offset: const Offset(0, 2))],
+              ),
+              child: ListView.builder(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                itemCount: _searchResults.length,
+                itemBuilder: (_, i) {
+                  final p = _searchResults[i];
+                  final fullName = [p.name, p.paternalSurname, p.maternalSurname]
+                      .where((e) => e != null && e.isNotEmpty).join(' ');
+                  return InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => _selectPerson(p),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 16,
+                            backgroundColor: theme.secondary.withValues(alpha: 0.1),
+                            child: Icon(Icons.person, size: 16, color: theme.secondary),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  p.identificationNumber,
+                                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: theme.primaryText),
+                                ),
+                                if (fullName.isNotEmpty)
+                                  Text(
+                                    fullName,
+                                    style: TextStyle(fontSize: 12, color: theme.secondaryText),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                              ],
+                            ),
+                          ),
+                          Icon(Icons.chevron_right, color: theme.secondaryText, size: 20),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          if (_selectedPerson != null && _selectedIdType != null)
+            TextFieldWidget(
+              controller: _docTypeController,
+              label: 'Tipo de Documento',
+              prefixIcon: Icons.badge_outlined,
+              fillColor: theme.primaryBackground,
+            )
+          else
+            GestureDetector(
+              onTap: _showIdTypePicker,
+              child: AbsorbPointer(
+                child: TextFieldWidget(
+                  controller: _docTypeController,
+                  label: 'Tipo de Documento',
+                  hint: _idTypes.isEmpty ? 'Cargando...' : 'Seleccionar tipo',
+                  prefixIcon: Icons.badge_outlined,
+                  suffixIcon: Icons.arrow_drop_down,
+                ),
+              ),
+            ),
           const SizedBox(height: 12),
           TextFieldWidget(
             controller: _firstNameController,

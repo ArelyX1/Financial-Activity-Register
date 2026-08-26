@@ -13,6 +13,7 @@ class TextFieldWidget extends StatefulWidget {
   final String? Function(String?)? validator;
   final void Function(String)? onChanged;
   final Color? fillColor;
+  final bool readOnly;
 
   const TextFieldWidget({
     super.key,
@@ -27,6 +28,7 @@ class TextFieldWidget extends StatefulWidget {
     this.validator,
     this.onChanged,
     this.fillColor,
+    this.readOnly = false,
   });
 
   @override
@@ -73,6 +75,7 @@ class _TextFieldWidgetState extends State<TextFieldWidget> {
           ),
           child: TextFormField(
             controller: widget.controller,
+            readOnly: widget.readOnly,
             obscureText: _obscured && widget.obscure,
             maxLines: widget.multiline ? 4 : 1,
             keyboardType: widget.keyboardType,
