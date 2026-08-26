@@ -4,6 +4,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:provider/provider.dart';
 import 'app.dart';
 import 'models/app_state.dart';
+import 'services/api_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -11,6 +12,12 @@ void main() async {
   await initializeDateFormatting('es', null);
   final appState = AppState();
   await appState.restoreSession();
+  ApiService.configure(
+    refreshToken: appState.refreshToken.isNotEmpty ? appState.refreshToken : null,
+    onTokensRefreshed: (access, refresh) async {
+      appState.updateTokens(accessToken: access, refreshToken: refresh);
+    },
+  );
   runApp(
     ChangeNotifierProvider.value(
       value: appState,

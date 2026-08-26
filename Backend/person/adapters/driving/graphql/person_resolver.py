@@ -11,6 +11,10 @@ from db.config import AsyncSessionLocal
 from auth.adapters.driving.graphql.helpers import resolve_user_from_token, enforce_access
 
 
+def _combine_last_name(paternal, maternal):
+    return " ".join(part for part in (paternal, maternal) if part)
+
+
 @strawberry.type
 class Person:
     id: str

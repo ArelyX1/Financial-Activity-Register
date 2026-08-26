@@ -132,6 +132,17 @@ class IdTypeData {
 }
 
 class ApiService {
+  static String? _currentRefreshToken;
+  static Future<void> Function(String accessToken, String refreshToken)? _onTokensRefreshed;
+
+  static void configure({
+    required String? refreshToken,
+    required Future<void> Function(String accessToken, String refreshToken)? onTokensRefreshed,
+  }) {
+    _currentRefreshToken = refreshToken;
+    _onTokensRefreshed = onTokensRefreshed;
+  }
+
   static Future<Map<String, dynamic>> _post(String query, [Map<String, dynamic>? variables]) async {
     final response = await http.post(
       Uri.parse(ApiConfig.apiUrl),
@@ -142,10 +153,61 @@ class ApiService {
       }),
     );
     final body = jsonDecode(response.body) as Map<String, dynamic>;
-    if (response.statusCode != 200 || body['errors'] != null) {
-      throw ApiException(response.statusCode, _extractError(body));
+
+    if (response.statusCode == 200 && body['errors'] == null) {
+      return body['data'] as Map<String, dynamic>;
     }
-    return body['data'] as Map<String, dynamic>;
+
+    final error = _extractError(body);
+    if (_isAuthError(error) && _currentRefreshToken != null && _onTokensRefreshed != null) {
+      final refreshed = await _tryRefreshToken();
+      if (refreshed) {
+        return _post(query, variables);
+      }
+    }
+
+    throw ApiException(response.statusCode, error);
+  }
+
+  static bool _isAuthError(String error) {
+    final lower = error.toLowerCase();
+    return lower.contains('expired') || lower.contains('invalid or expired token') || lower.contains('token expir');
+  }
+
+  static Future<bool> _tryRefreshToken() async {
+    try {
+      final rt = _currentRefreshToken;
+      if (rt == null) return false;
+
+      final mutation = '''
+        mutation RefreshToken(\$refreshToken: String!) {
+          refresh_token(refresh_token: \$refreshToken) {
+            success
+            access_token
+            refresh_token
+          }
+        }
+      ''';
+      final response = await http.post(
+        Uri.parse(ApiConfig.apiUrl),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'query': mutation, 'variables': {'refreshToken': rt}}),
+      );
+      final body = jsonDecode(response.body) as Map<String, dynamic>;
+      final data = body['data'] as Map<String, dynamic>?;
+      final payload = data?['refresh_token'] as Map<String, dynamic>?;
+      if (payload == null || payload['success'] != true) return false;
+
+      final newAccess = payload['access_token'] as String?;
+      final newRefresh = payload['refresh_token'] as String?;
+      if (newAccess == null || newRefresh == null) return false;
+
+      _currentRefreshToken = newRefresh;
+      _onTokensRefreshed?.call(newAccess, newRefresh);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   static Future<List<IdTypeData>> getIdentificationTypes({required String token}) async {

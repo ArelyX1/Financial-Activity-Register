@@ -162,6 +162,14 @@ class _LoginPageState extends State<LoginPage>
             permissions: result.permissions,
             identificationNumber: username,
           );
+      ApiService.configure(
+        refreshToken: result.refreshToken,
+        onTokensRefreshed: (access, refresh) async {
+          if (mounted) {
+            context.read<AppState>().updateTokens(accessToken: access, refreshToken: refresh);
+          }
+        },
+      );
       context.go('/dashboard');
     } catch (e) {
       if (!mounted) return;

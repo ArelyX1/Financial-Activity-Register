@@ -114,121 +114,13 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
   }
 
   void _showDocSearchSheet() {
-    final theme = AppTheme.of(context);
-    final searchController = TextEditingController();
-    List<PersonData> results = [];
-    bool searching = false;
-
+    final token = context.read<AppState>().accessToken;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            String? errorMsg;
-
-            Future<void> doSearch(String q) async {
-              if (q.length < 2) {
-                setModalState(() { results = []; searching = false; errorMsg = null; });
-                return;
-              }
-              setModalState(() { searching = true; errorMsg = null; });
-              try {
-                final token = context.read<AppState>().accessToken;
-                final all = await ApiService.searchPersons(token: token, search: q);
-                setModalState(() { results = all; searching = false; errorMsg = null; });
-              } catch (e) {
-                setModalState(() { searching = false; errorMsg = e.toString(); });
-              }
-            }
-
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.7,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 12),
-                  Container(width: 40, height: 4, decoration: BoxDecoration(
-                    color: AppColors.secondaryText.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(2),
-                  )),
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: TextField(
-                      controller: searchController,
-                      autofocus: true,
-                      keyboardType: TextInputType.number,
-                      decoration: InputDecoration(
-                        hintText: 'Ingrese número de documento...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: theme.secondary),
-                        ),
-                      ),
-                      onChanged: (v) => doSearch(v),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  if (searching)
-                    const Padding(
-                      padding: EdgeInsets.all(20),
-                      child: CircularProgressIndicator(),
-                    )
-                  else if (errorMsg != null)
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text(
-                        'Error: $errorMsg',
-                        style: const TextStyle(color: Colors.red),
-                        textAlign: TextAlign.center,
-                      ),
-                    )
-                  else if (results.isEmpty && searchController.text.length >= 2)
-                    Padding(
-                      padding: const EdgeInsets.all(20),
-                      child: Text('No se encontraron resultados', style: TextStyle(color: AppColors.secondaryText)),
-                    )
-                  else
-                    Expanded(
-                      child: ListView.separated(
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        itemCount: results.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (_, i) {
-                          final p = results[i];
-                          final fullName = [p.name, p.paternalSurname, p.maternalSurname]
-                              .where((e) => e != null && e.isNotEmpty).join(' ');
-                          return ListTile(
-                            contentPadding: const EdgeInsets.symmetric(vertical: 4),
-                            leading: CircleAvatar(
-                              backgroundColor: theme.secondary.withValues(alpha: 0.1),
-                              child: Icon(Icons.person, color: theme.secondary, size: 20),
-                            ),
-                            title: Text(p.identificationNumber, style: TextStyle(fontWeight: FontWeight.w600, color: theme.primaryText)),
-                            subtitle: fullName.isNotEmpty ? Text(fullName, style: TextStyle(fontSize: 13, color: theme.secondaryText)) : null,
-                            trailing: Icon(Icons.chevron_right, color: theme.secondaryText),
-                            onTap: () {
-                              Navigator.pop(ctx);
-                              _selectPerson(p);
-                            },
-                          );
-                        },
-                      ),
-                    ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    ).whenComplete(() => searchController.dispose());
+      builder: (_) => _DocSearchSheet(token: token, onPersonSelected: _selectPerson),
+    );
   }
 
   @override
@@ -422,100 +314,20 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
   }
 
   void _showIdTypePicker() {
-    final theme = AppTheme.of(context);
-    final activeTypes = _idTypes.where((t) => t.isActive != false).toList();
-
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        final searchController = TextEditingController();
-        List<IdTypeData> filtered = List.from(activeTypes);
-        return StatefulBuilder(
-          builder: (ctx, setModalState) {
-            return Container(
-              height: MediaQuery.of(context).size.height * 0.5,
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-              ),
-              child: Column(
-                children: [
-                  const SizedBox(height: 12),
-                  Container(
-                    width: 40, height: 4,
-                    decoration: BoxDecoration(
-                      color: AppColors.secondaryText.withValues(alpha: 0.3),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: TextField(
-                      controller: searchController,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        hintText: 'Buscar tipo de documento...',
-                        prefixIcon: const Icon(Icons.search),
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: BorderSide(color: theme.secondary),
-                        ),
-                      ),
-                      onChanged: (v) {
-                        final q = v.toLowerCase();
-                        setModalState(() {
-                          filtered = activeTypes.where((t) =>
-                            t.name.toLowerCase().contains(q) ||
-                            (t.code?.toLowerCase().contains(q) ?? false)
-                          ).toList();
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 20),
-                      itemCount: filtered.length,
-                      itemBuilder: (_, i) {
-                        final t = filtered[i];
-                        final isSelected = _selectedIdType?.id == t.id;
-                        return ListTile(
-                          leading: Icon(
-                            Icons.badge_outlined,
-                            color: isSelected ? theme.secondary : theme.secondaryText,
-                          ),
-                          title: Text(
-                            '${t.name} (${t.countryIso})',
-                            style: TextStyle(
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                              color: isSelected ? theme.secondary : theme.primaryText,
-                            ),
-                          ),
-                          trailing: isSelected
-                              ? Icon(Icons.check_circle, color: theme.secondary)
-                              : null,
-                          onTap: () {
-                            setState(() {
-                              _selectedIdType = t;
-                              _docTypeController.text = t.name;
-                            });
-                            Navigator.pop(ctx);
-                          },
-                        );
-                      },
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+      builder: (_) => _IdTypePickerSheet(
+        idTypes: _idTypes,
+        selectedIdType: _selectedIdType,
+        onSelected: (t) {
+          setState(() {
+            _selectedIdType = t;
+            _docTypeController.text = t.name;
+          });
+        },
+      ),
     );
   }
 
@@ -594,6 +406,244 @@ class _ActivityRegistrationFormPageState extends State<ActivityRegistrationFormP
             label: 'Nombre de la Concesionaria',
             hint: 'Ingrese nombre de la concesionaria',
             prefixIcon: Icons.storefront_outlined,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _DocSearchSheet extends StatefulWidget {
+  final String token;
+  final ValueChanged<PersonData> onPersonSelected;
+  const _DocSearchSheet({required this.token, required this.onPersonSelected});
+  @override
+  State<_DocSearchSheet> createState() => _DocSearchSheetState();
+}
+
+class _DocSearchSheetState extends State<_DocSearchSheet> {
+  final _searchController = TextEditingController();
+  List<PersonData> _results = [];
+  bool _searching = false;
+  String? _errorMsg;
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _doSearch(String q) async {
+    if (q.length < 2) {
+      setState(() { _results = []; _searching = false; _errorMsg = null; });
+      return;
+    }
+    setState(() { _searching = true; _errorMsg = null; });
+    try {
+      final all = await ApiService.searchPersons(token: widget.token, search: q);
+      if (!mounted) return;
+      setState(() { _results = all; _searching = false; _errorMsg = null; });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() { _searching = false; _errorMsg = e.toString(); });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppTheme.of(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return Container(
+      height: screenHeight * 0.7,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(width: 40, height: 4, decoration: BoxDecoration(
+            color: AppColors.secondaryText.withValues(alpha: 0.3),
+            borderRadius: BorderRadius.circular(2),
+          )),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              keyboardType: TextInputType.number,
+              decoration: InputDecoration(
+                hintText: 'Ingrese número de documento...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: theme.secondary),
+                ),
+              ),
+              onChanged: _doSearch,
+            ),
+          ),
+          const SizedBox(height: 12),
+          if (_searching)
+            const Padding(
+              padding: EdgeInsets.all(20),
+              child: CircularProgressIndicator(),
+            )
+          else if (_errorMsg != null)
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text(
+                'Error: $_errorMsg',
+                style: const TextStyle(color: Colors.red),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else if (_results.isEmpty && _searchController.text.length >= 2)
+            Padding(
+              padding: const EdgeInsets.all(20),
+              child: Text('No se encontraron resultados', style: TextStyle(color: AppColors.secondaryText)),
+            )
+          else
+            Expanded(
+              child: ListView.separated(
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                itemCount: _results.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (_, i) {
+                  final p = _results[i];
+                  final fullName = [p.name, p.paternalSurname, p.maternalSurname]
+                      .where((e) => e != null && e.isNotEmpty).join(' ');
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(vertical: 4),
+                    leading: CircleAvatar(
+                      backgroundColor: theme.secondary.withValues(alpha: 0.1),
+                      child: Icon(Icons.person, color: theme.secondary, size: 20),
+                    ),
+                    title: Text(p.identificationNumber, style: TextStyle(fontWeight: FontWeight.w600, color: theme.primaryText)),
+                    subtitle: fullName.isNotEmpty ? Text(fullName, style: TextStyle(fontSize: 13, color: theme.secondaryText)) : null,
+                    trailing: Icon(Icons.chevron_right, color: theme.secondaryText),
+                    onTap: () {
+                      widget.onPersonSelected(p);
+                      Navigator.pop(context);
+                    },
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IdTypePickerSheet extends StatefulWidget {
+  final List<IdTypeData> idTypes;
+  final IdTypeData? selectedIdType;
+  final ValueChanged<IdTypeData> onSelected;
+  const _IdTypePickerSheet({required this.idTypes, this.selectedIdType, required this.onSelected});
+  @override
+  State<_IdTypePickerSheet> createState() => _IdTypePickerSheetState();
+}
+
+class _IdTypePickerSheetState extends State<_IdTypePickerSheet> {
+  late final TextEditingController _searchController;
+  late List<IdTypeData> _filtered;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController();
+    _filtered = widget.idTypes.where((t) => t.isActive != false).toList();
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = AppTheme.of(context);
+    final screenHeight = MediaQuery.of(context).size.height;
+
+    return Container(
+      height: screenHeight * 0.5,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          Container(
+            width: 40, height: 4,
+            decoration: BoxDecoration(
+              color: AppColors.secondaryText.withValues(alpha: 0.3),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            child: TextField(
+              controller: _searchController,
+              autofocus: true,
+              decoration: InputDecoration(
+                hintText: 'Buscar tipo de documento...',
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: theme.secondary),
+                ),
+              ),
+              onChanged: (v) {
+                final q = v.toLowerCase();
+                setState(() {
+                  _filtered = widget.idTypes.where((t) =>
+                    t.isActive != false && (
+                      t.name.toLowerCase().contains(q) ||
+                      (t.code?.toLowerCase().contains(q) ?? false)
+                    )
+                  ).toList();
+                });
+              },
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView.builder(
+              padding: const EdgeInsets.symmetric(horizontal: 20),
+              itemCount: _filtered.length,
+              itemBuilder: (_, i) {
+                final t = _filtered[i];
+                final isSelected = widget.selectedIdType?.id == t.id;
+                return ListTile(
+                  leading: Icon(
+                    Icons.badge_outlined,
+                    color: isSelected ? theme.secondary : theme.secondaryText,
+                  ),
+                  title: Text(
+                    '${t.name} (${t.countryIso})',
+                    style: TextStyle(
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                      color: isSelected ? theme.secondary : theme.primaryText,
+                    ),
+                  ),
+                  trailing: isSelected
+                      ? Icon(Icons.check_circle, color: theme.secondary)
+                      : null,
+                  onTap: () {
+                    widget.onSelected(t);
+                    Navigator.pop(context);
+                  },
+                );
+              },
+            ),
           ),
         ],
       ),

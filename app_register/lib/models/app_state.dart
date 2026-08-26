@@ -189,6 +189,13 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  void updateTokens({required String accessToken, required String refreshToken}) {
+    _accessToken = accessToken;
+    _refreshToken = refreshToken;
+    _persistSession();
+    notifyListeners();
+  }
+
   Future<void> _persistSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('session_accessToken', _accessToken);
