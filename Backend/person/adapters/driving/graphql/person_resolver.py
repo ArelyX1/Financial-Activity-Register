@@ -284,7 +284,7 @@ class Query:
 
     @strawberry.field
     async def search_persons(self, search: str, token: str) -> List[PersonWithUser]:
-        await enforce_access(token, "persons_by_role")
+        await resolve_user_from_token(token)
         async with AsyncSessionLocal() as session:
             repo = PostgresPersonRepository(session)
             service = PersonService(repo)
